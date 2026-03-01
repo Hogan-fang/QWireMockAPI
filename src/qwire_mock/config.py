@@ -24,6 +24,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "order": {
         "poll_interval_seconds": 5,
         "callback_skip_amount_gte": 1000,
+        "process_historical_on_startup": False,
     },
     "logging": {
         "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -72,6 +73,9 @@ def _apply_env_overrides(config: dict[str, Any]) -> None:
         config["order"]["poll_interval_seconds"] = int(os.environ["QWIRE_V2_POLL_INTERVAL_SECONDS"])
     if os.environ.get("QWIRE_V2_CALLBACK_SKIP_AMOUNT_GTE"):
         config["order"]["callback_skip_amount_gte"] = float(os.environ["QWIRE_V2_CALLBACK_SKIP_AMOUNT_GTE"])
+    if os.environ.get("QWIRE_V2_PROCESS_HISTORICAL_ON_STARTUP"):
+        value = os.environ["QWIRE_V2_PROCESS_HISTORICAL_ON_STARTUP"].strip().lower()
+        config["order"]["process_historical_on_startup"] = value in ("1", "true", "yes", "on")
 
     if os.environ.get("QWIRE_V2_ORDER_LOG"):
         config["logging"]["order_log"] = os.environ["QWIRE_V2_ORDER_LOG"]

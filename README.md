@@ -122,6 +122,15 @@ The project root `config.yaml` is the primary configuration source for:
 - order scheduler and callback threshold
 - log format and log file paths
 
+Example:
+
+```yaml
+order:
+  poll_interval_seconds: 5
+  callback_skip_amount_gte: 1000
+  process_historical_on_startup: false
+```
+
 Use a custom file path with:
 
 - `QWIRE_CONFIG_FILE=/path/to/your-config.yaml`
@@ -142,6 +151,7 @@ Order scheduler and callback policy:
 
 - `QWIRE_V2_POLL_INTERVAL_SECONDS` (default `5`)
 - `QWIRE_V2_CALLBACK_SKIP_AMOUNT_GTE` (default `1000`)
+- `QWIRE_V2_PROCESS_HISTORICAL_ON_STARTUP` (default `false`; when false, scheduler only processes orders created after this process starts)
 
 Tests:
 

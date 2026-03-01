@@ -222,17 +222,36 @@ def get_callback_info(reference: UUID) -> tuple[str, float] | None:
         conn.close()
 
 
-def apply_scheduled_transitions() -> list[TransitionTarget]:
+def db_now() -> datetime:
+    conn = _conn()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT NOW() AS now")
+            row = cursor.fetchone()
+            return row["now"]
+    finally:
+        conn.close()
+
+
+def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[TransitionTarget]:
     transitions: list[TransitionTarget] = []
     conn = _conn()
     try:
         with conn.cursor() as cursor:
+            min_created_clause = ""
+            min_created_params: tuple = ()
+            if min_created_at is not None:
+                min_created_clause = " AND created_at >= %s"
+                min_created_params = (min_created_at,)
+
             cursor.execute(
-                """
+                f"""
                 SELECT reference, callback_url
                 FROM v2_orders
                 WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 30 SECOND
-                """
+                {min_created_clause}
+                """,
+                min_created_params,
             )
             to_shipped = cursor.fetchall()
             if to_shipped:
@@ -254,11 +273,13 @@ def apply_scheduled_transitions() -> list[TransitionTarget]:
                 )
 
             cursor.execute(
-                """
+                f"""
                 SELECT reference, callback_url
                 FROM v2_orders
                 WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 60 SECOND
-                """
+                {min_created_clause}
+                """,
+                min_created_params,
             )
             to_delivered = cursor.fetchall()
             if to_delivered:
@@ -280,17 +301,19 @@ def apply_scheduled_transitions() -> list[TransitionTarget]:
                 )
 
             cursor.execute(
-                """
+                                f"""
                 SELECT o.reference, o.callback_url
                 FROM v2_orders o
                 WHERE o.status = 'SUCCESS'
+                                    {"AND o.created_at >= %s" if min_created_at is not None else ""}
                   AND EXISTS (
                     SELECT 1 FROM v2_order_products p WHERE p.order_id = o.id
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM v2_order_products p WHERE p.order_id = o.id AND p.status != 'DELIVERED'
                   )
-                """
+                                """,
+                                min_created_params,
             )
             to_completed = cursor.fetchall()
             if to_completed:

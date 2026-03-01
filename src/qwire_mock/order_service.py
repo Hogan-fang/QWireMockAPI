@@ -42,7 +42,9 @@ _ensure_file_logger()
 
 POLL_INTERVAL_SECONDS = int(ORDER_CONFIG["poll_interval_seconds"])
 CALLBACK_SKIP_AMOUNT_GTE = float(ORDER_CONFIG["callback_skip_amount_gte"])
+PROCESS_HISTORICAL_ON_STARTUP = bool(ORDER_CONFIG.get("process_historical_on_startup", False))
 _stop_event = threading.Event()
+_scheduler_cutoff_time = None
 
 
 def _json(payload: dict) -> str:
@@ -84,7 +86,7 @@ def _dispatch_callback(order: OrderResponse, callback_url: str, event_type: str)
 
 def _status_scheduler() -> None:
     while not _stop_event.is_set():
-        transitions = order_db.apply_scheduled_transitions()
+        transitions = order_db.apply_scheduled_transitions(min_created_at=_scheduler_cutoff_time)
         for target in transitions:
             order = order_db.get_order(target.reference)
             if order is None:
@@ -95,7 +97,14 @@ def _status_scheduler() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global _scheduler_cutoff_time
     order_db.init_db()
+    if PROCESS_HISTORICAL_ON_STARTUP:
+        _scheduler_cutoff_time = None
+        logger.info("order scheduler startup mode: process historical orders enabled")
+    else:
+        _scheduler_cutoff_time = order_db.db_now()
+        logger.info("order scheduler startup mode: skip historical orders before %s", _scheduler_cutoff_time)
     logger.info("order service startup: scheduler poll_interval=%ss", POLL_INTERVAL_SECONDS)
     scheduler = threading.Thread(target=_status_scheduler, daemon=True)
     scheduler.start()

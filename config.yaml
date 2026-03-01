@@ -14,6 +14,7 @@ mysql:
 order:
   poll_interval_seconds: 5
   callback_skip_amount_gte: 1000
+  process_historical_on_startup: false
 
 logging:
   format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
