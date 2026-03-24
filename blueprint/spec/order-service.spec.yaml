@@ -26,10 +26,15 @@ functionalModules:
     responsibilities:
       - "订单创建或状态变化后触发回调事件"
 
+namingConventions:
+  - "接口请求/响应字段、代码变量统一使用小驼峰命名（camelCase）"
+  - "数据库表名与列名统一使用下划线命名（snake_case）"
+  - "如存在跨层映射，需在数据访问层显式维护命名转换（例如 failReason <-> fail_reason）"
+
 behavior:
   - "对于4开头的支付卡号，返回400错误，表示不支持的卡类型"
   - "当支付成功时，不应返回敏感信息，如 CVV 和 expiry，cardNumber 应为掩码格式（前6后4可见）"
-  - "只有支付失败时才返回fail_reason字段，且该字段应描述失败原因"
+  - "只有支付失败时才返回failReason字段，且该字段应描述失败原因"
   - "不论何种失败原因，订单状态均为 FAIL"
   - "所有返回的状态都应为字符串类型，并大写"
   - "订单查询时，如果 reference 格式不合法，应返回 400 错误，并提供明确的错误信息"

@@ -40,7 +40,7 @@ Source file: `tests/test_v2_order_service.py`
 | `test_v2_create_order_invalid_uuid_returns_422` | Validates invalid UUID in `POST /order` body returns 422 from framework validation. |
 | `test_v2_get_order_invalid_uuid_returns_400` | Validates invalid UUID in `GET /order` query returns 400 + `invalid UUID string`. |
 | `test_v2_get_order_not_found_returns_404` | Validates `GET /order` returns 404 + `Order not found` for absent order. |
-| `test_v2_get_order_found_returns_200` | Validates successful `GET /order` returns 200 with `SUCCESS` and no `fail_reason`. |
+| `test_v2_get_order_found_returns_200` | Validates successful `GET /order` returns 200 with `SUCCESS` and no `failReason`. |
 | `test_v2_create_then_get_order_flow` | Validates create-then-query consistency (`reference/orderId`). |
 | `test_v2_dispatch_callback_skip_by_amount_policy` | Validates callback threshold policy: high amount skips, low amount triggers. |
 
@@ -50,7 +50,7 @@ Source file: `tests/test_v2_order_service_integration.py`
 
 | Test Case | Functional Point |
 |---|---|
-| `test_v2_integration_create_order_persists_db` | Validates successful `POST /order` persistence into `v2_orders`/`v2_order_products` and `SUCCESS` response. |
+| `test_v2_integration_create_order_persists_db` | Validates successful `POST /order` persistence into `orders`/`order_products` and `SUCCESS` response. |
 | `test_v2_integration_invalid_card_persists_fail_order` | Validates invalid-card failure and failed-order persistence. |
 | `test_v2_integration_get_order_reads_from_db` | Validates `GET /order` reads and returns persisted data. |
 | `test_v2_integration_duplicate_reference_conflict` | Validates duplicate `reference` second submit returns 400 conflict. |

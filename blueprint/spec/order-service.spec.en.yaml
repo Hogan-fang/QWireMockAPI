@@ -26,10 +26,15 @@ functionalModules:
     responsibilities:
       - "Publish callback events after order creation and status transitions"
 
+namingConventions:
+  - "Use camelCase for API request/response fields and code variables"
+  - "Use snake_case for database table and column names"
+  - "When crossing layers, maintain explicit name mapping in data access code (for example, failReason <-> fail_reason)"
+
 behavior:
   - "For card numbers starting with 4, return 400 as unsupported card type"
   - "On successful payment, do not return sensitive fields (CVV/expiry); cardNumber must be masked"
-  - "Return fail_reason only when status is FAIL"
+  - "Return failReason only when status is FAIL"
   - "For all failure reasons, order status must be FAIL"
   - "All returned status values must be uppercase strings"
   - "For invalid reference format in order query, return 400 with explicit error message"

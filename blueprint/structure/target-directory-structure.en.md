@@ -53,7 +53,7 @@ mock-platform/
         retry.py
         queue.py
 
-  specs/
+  spec/
     order-service.spec.yaml
     callback-server.spec.yaml
     shared-contracts.spec.yaml

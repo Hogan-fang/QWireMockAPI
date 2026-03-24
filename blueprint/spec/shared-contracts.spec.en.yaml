@@ -1,0 +1,48 @@
+specVersion: "1.0"
+service: "shared-contracts"
+status: "draft"
+
+purpose:
+  - "Define shared contract rules for order-server and callback-server"
+  - "Unify naming, status, timing, and logging constraints"
+  - "Act as a common semantic layer between schema and implementation"
+
+contracts:
+  naming:
+    - "HTTP request and response fields use camelCase"
+    - "Database table and column names use snake_case"
+    - "Cross-layer naming differences must be mapped explicitly in implementation"
+
+  status:
+    - "All order and product statuses use uppercase strings"
+    - "Allowed order statuses: SUCCESS, COMPLETED, FAIL"
+    - "Allowed product statuses: PROCESSING, SHIPPED, DELIVERED, FAIL"
+
+  persistence:
+    - "Order master data must be persisted to the database"
+    - "Order product data must be persisted to the database"
+    - "Callback records are log-based by default and do not require database persistence"
+
+  masking:
+    - "cardNumber in responses must use first-6 last-4 masking"
+    - "CVV and expiry must not appear in order responses or callback payloads"
+
+  timing:
+    - "ORDER_SUCCESS callback should be emitted immediately after successful order creation"
+    - "About 30 seconds after creation, product status transitions to SHIPPED"
+    - "About 60 seconds after creation, product status transitions to DELIVERED"
+    - "When all products are DELIVERED, order status transitions to COMPLETED"
+
+  callback:
+    - "Callback event types must include ORDER_SUCCESS, ORDER_SHIPPED, ORDER_DELIVERED, and ORDER_COMPLETED"
+    - "Callback requests and responses must be written to readable logs"
+
+  errorHandling:
+    - "All failure responses use FAIL as status"
+    - "Failure reason field uses failReason"
+    - "Invalid reference input must return a clear error message"
+
+testScenarios:
+  - "Shared status values stay consistent with schema enums"
+  - "Shared masking rules are satisfied by both order-server and callback-server"
+  - "Shared timing rules are verifiable in integration tests"

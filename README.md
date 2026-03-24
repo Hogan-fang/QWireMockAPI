@@ -55,12 +55,12 @@ Default ports:
 
 - `POST /order`
   - Success: `201`, `status="SUCCESS"`
-  - Invalid card (`cardNumber` starts with `4`): `400`, `status="FAIL"`, `fail_reason="Unsupported card type"`
-  - Duplicate reference: `400`, `status="FAIL"`, `fail_reason="Order already exists"`
+  - Invalid card (`cardNumber` starts with `4`): `400`, `status="FAIL"`, `failReason="Unsupported card type"`
+  - Duplicate reference: `400`, `status="FAIL"`, `failReason="Order already exists"`
 - `GET /order?reference=<uuid>`
   - Found: `200`
-  - Invalid UUID: `400`, `fail_reason="invalid UUID string"`
-  - Not found: `404`, `fail_reason="Order not found"`
+  - Invalid UUID: `400`, `failReason="invalid UUID string"`
+  - Not found: `404`, `failReason="Order not found"`
 
 Order status lifecycle:
 
@@ -89,6 +89,12 @@ If order `amount >= QWIRE_V2_CALLBACK_SKIP_AMOUNT_GTE` (default `1000`), callbac
   - Invalid payload: `400`, body with validation errors
 - `GET /check?reference=<uuid>`
   - Always `404` (callback records are log-only and not queryable)
+
+## Naming Conventions
+
+- API request/response fields and code variables use `camelCase`
+- Database table/column names use `snake_case`
+- Cross-layer mapping must be explicit in data access code (for example: `failReason` <-> `fail_reason`)
 
 ## Logging
 
@@ -155,7 +161,7 @@ Order scheduler and callback policy:
 
 Tests:
 
-- `QWIRE_V2_CLEAR_DB_BEFORE_TEST=1` to clear `v2_orders` before each integration test (default is no clearing)
+- `QWIRE_V2_CLEAR_DB_BEFORE_TEST=1` to clear `orders` before each integration test (default is no clearing)
 
 ## Development
 
@@ -184,7 +190,10 @@ QWireMock/
 │   └── schemas.py
 ├── tests/
 ├── blueprint/
-│   ├── order_server.yaml
-│   └── callback_server.yaml
+│   ├── blueprint-guide.md
+│   ├── schema/
+│   ├── spec/
+│   ├── examples/
+│   └── structure/
 └── README.md
 ```

@@ -13,6 +13,7 @@ def _callback_payload(reference: str) -> dict:
         "reference": reference,
         "orderId": "PX2001",
         "name": "Callback Test Order",
+        "mid": "M123456789",
         "orderDate": "2026-02-28T10:00:00Z",
         "amount": 99.99,
         "currency": "USD",

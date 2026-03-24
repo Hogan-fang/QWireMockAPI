@@ -17,18 +17,19 @@ def order_client(monkeypatch: pytest.MonkeyPatch):
         yield client
 
 
-def _build_order_response(reference: str, status: str = "SUCCESS", fail_reason: str | None = None) -> OrderResponse:
+def _build_order_response(reference: str, status: str = "SUCCESS", failReason: str | None = None) -> OrderResponse:
     return OrderResponse(
         reference=reference,
         orderId="PX1001",
         name="Widget Adapter Order",
+        mid="M123456789",
         orderDate=datetime.now(timezone.utc),
         amount=99.99,
         currency="USD",
         status=status,
         cardNumber="555555******4444",
         products=[ProductResponse(productId="29838-02", count=2, spec="xs-83", status="FAIL" if status == "FAIL" else "PROCESSING")],
-        fail_reason=fail_reason,
+        failReason=failReason,
     )
 
 
@@ -44,7 +45,7 @@ def test_v2_create_order_success_returns_201_and_masked_card(
     monkeypatch.setattr(
         order_service.order_db,
         "create_order",
-        lambda _request, status, fail_reason=None: _build_order_response(str(_request.reference), status, fail_reason),
+        lambda _request, status, failReason=None: _build_order_response(str(_request.reference), status, failReason),
     )
     monkeypatch.setattr(order_service.order_db, "get_callback_info", lambda _reference: ("http://localhost:8100/callback", 99.99))
     monkeypatch.setattr(
@@ -59,6 +60,8 @@ def test_v2_create_order_success_returns_201_and_masked_card(
         "reference": ref,
         "name": "Widget Adapter Order",
         "callback": "http://localhost:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
         "cardNumber": "5555555555554444",
         "cvv": "123",
         "expiry": "12/28",
@@ -76,7 +79,7 @@ def test_v2_create_order_success_returns_201_and_masked_card(
     assert body["cardNumber"] == "555555******4444"
     assert "cvv" not in body
     assert "expiry" not in body
-    assert "fail_reason" not in body
+    assert "failReason" not in body
     assert callback_events == [(ref, "ORDER_SUCCESS")]
 
 
@@ -94,6 +97,8 @@ def test_v2_create_order_conflict_returns_400(
         "reference": ref,
         "name": "Duplicate Order",
         "callback": "http://localhost:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
         "cardNumber": "5555555555554444",
         "cvv": "123",
         "expiry": "12/28",
@@ -104,7 +109,12 @@ def test_v2_create_order_conflict_returns_400(
 
     response = order_client.post("/order", json=payload)
     assert response.status_code == 400
-    assert response.json() == {"status": "FAIL", "fail_reason": "Order already exists"}
+    body = response.json()
+    assert body["status"] == "FAIL"
+    assert body["failReason"] == "Order already exists"
+    assert body["reference"] == ref
+    assert body["name"] == "Duplicate Order"
+    assert body["mid"] == "M123456789"
 
 
 @pytest.mark.case(point="POST /order card number starting with 4 returns 400 and FAIL")
@@ -117,8 +127,8 @@ def test_v2_create_order_invalid_card_returns_400(
     monkeypatch.setattr(
         order_service.order_db,
         "create_order",
-        lambda request, status, fail_reason=None: _build_order_response(
-            str(request.reference), status="FAIL", fail_reason="Unsupported card type"
+        lambda request, status, failReason=None: _build_order_response(
+            str(request.reference), status="FAIL", failReason="Unsupported card type"
         ),
     )
 
@@ -128,6 +138,8 @@ def test_v2_create_order_invalid_card_returns_400(
         "reference": ref,
         "name": "Invalid Card Order",
         "callback": "http://localhost:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
         "cardNumber": "4111111111111111",
         "cvv": "123",
         "expiry": "12/28",
@@ -140,7 +152,7 @@ def test_v2_create_order_invalid_card_returns_400(
     assert response.status_code == 400
     body = response.json()
     assert body["status"] == "FAIL"
-    assert body["fail_reason"] == "Unsupported card type"
+    assert body["failReason"] == "Unsupported card type"
 
 
 @pytest.mark.case(point="POST /order invalid UUID in request body returns 422 from framework validation")
@@ -151,6 +163,8 @@ def test_v2_create_order_invalid_uuid_returns_422(order_client: TestClient, reco
         "reference": bad_ref,
         "name": "Bad UUID Order",
         "callback": "http://localhost:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
         "cardNumber": "5555555555554444",
         "cvv": "123",
         "expiry": "12/28",
@@ -171,7 +185,7 @@ def test_v2_get_order_invalid_uuid_returns_400(order_client: TestClient, record_
     assert response.status_code == 400
     body = response.json()
     assert body["status"] == "FAIL"
-    assert body["fail_reason"] == "invalid UUID string"
+    assert body["failReason"] == "invalid UUID string"
 
 
 @pytest.mark.case(point="GET /order order not found returns 404")
@@ -187,7 +201,7 @@ def test_v2_get_order_not_found_returns_404(
     assert response.status_code == 404
     body = response.json()
     assert body["status"] == "FAIL"
-    assert body["fail_reason"] == "Order not found"
+    assert body["failReason"] == "Order not found"
 
 
 @pytest.mark.case(point="GET /order successful query returns 200")
@@ -205,7 +219,7 @@ def test_v2_get_order_found_returns_200(
     body = response.json()
     assert body["reference"] == ref
     assert body["status"] == "SUCCESS"
-    assert "fail_reason" not in body
+    assert "failReason" not in body
 
 
 @pytest.mark.case(point="Create then query: returns the same reference and orderId")
@@ -218,7 +232,7 @@ def test_v2_create_then_get_order_flow(
     order_response = _build_order_response(ref)
 
     monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: False)
-    monkeypatch.setattr(order_service.order_db, "create_order", lambda _request, status, fail_reason=None: order_response)
+    monkeypatch.setattr(order_service.order_db, "create_order", lambda _request, status, failReason=None: order_response)
     monkeypatch.setattr(order_service.order_db, "get_order", lambda _reference: order_response)
     monkeypatch.setattr(order_service.order_db, "get_callback_info", lambda _reference: None)
 
@@ -228,6 +242,8 @@ def test_v2_create_then_get_order_flow(
         "reference": ref,
         "name": "Create Then Query",
         "callback": "http://localhost:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
         "cardNumber": "5555555555554444",
         "cvv": "123",
         "expiry": "12/28",

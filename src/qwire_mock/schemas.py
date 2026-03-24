@@ -24,6 +24,8 @@ class OrderRequest(BaseModel):
     reference: UUID
     name: str
     callback: str
+    mid: str = Field(..., max_length=10)
+    signature: str
     cardNumber: str
     cvv: str
     expiry: str
@@ -36,13 +38,14 @@ class OrderResponse(BaseModel):
     reference: UUID
     orderId: str
     name: str
+    mid: str = Field(..., max_length=10)
     orderDate: datetime
     amount: float
     currency: str
     status: OrderStatus
     cardNumber: str
     products: list[ProductResponse]
-    fail_reason: str | None = None
+    failReason: str | None = None
 
 
 class Received(BaseModel):

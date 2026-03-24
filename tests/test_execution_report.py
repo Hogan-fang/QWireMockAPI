@@ -17,6 +17,7 @@ def test_generate_v2_execution_report(record_order_keyword):
         "reference": reference,
         "orderId": "PX9001",
         "name": "Execution Report Sample Order",
+        "mid": "M123456789",
         "orderDate": "2026-02-28T10:00:00Z",
         "amount": 88.88,
         "currency": "USD",

@@ -62,31 +62,49 @@ def init_db() -> None:
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS v2_orders (
+                CREATE TABLE IF NOT EXISTS orders (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     reference VARCHAR(36) NOT NULL UNIQUE,
                     order_id VARCHAR(64) UNIQUE,
                     name VARCHAR(255) NOT NULL,
                     callback_url VARCHAR(512) NOT NULL,
+                    mid VARCHAR(10) NOT NULL,
                     card_number VARCHAR(64) NOT NULL,
                     amount DOUBLE NOT NULL,
                     currency VARCHAR(16) NOT NULL,
                     status VARCHAR(32) NOT NULL,
-                    fail_reason VARCHAR(255) DEFAULT NULL,
+                    failReason VARCHAR(255) DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            cursor.execute("SHOW COLUMNS FROM orders LIKE 'mid'")
+            has_mid = cursor.fetchone() is not None
+            if not has_mid:
+                cursor.execute("ALTER TABLE orders ADD COLUMN mid VARCHAR(10) NOT NULL DEFAULT 'UNKNOWN'")
+            cursor.execute("SHOW COLUMNS FROM orders LIKE 'failReason'")
+            has_fail_reason_camel = cursor.fetchone() is not None
+            if not has_fail_reason_camel:
+                cursor.execute("SHOW COLUMNS FROM orders LIKE 'fail_reason'")
+                has_fail_reason_snake = cursor.fetchone() is not None
+                if has_fail_reason_snake:
+                    cursor.execute(
+                        "ALTER TABLE orders CHANGE fail_reason failReason VARCHAR(255) DEFAULT NULL"
+                    )
+                else:
+                    cursor.execute(
+                        "ALTER TABLE orders ADD COLUMN failReason VARCHAR(255) DEFAULT NULL"
+                    )
             cursor.execute(
                 """
-                CREATE TABLE IF NOT EXISTS v2_order_products (
+                CREATE TABLE IF NOT EXISTS order_products (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     order_id INT NOT NULL,
                     product_id VARCHAR(64) NOT NULL,
                     count INT NOT NULL,
                     spec VARCHAR(128) NOT NULL,
                     status VARCHAR(32) NOT NULL,
-                    FOREIGN KEY (order_id) REFERENCES v2_orders(id) ON DELETE CASCADE,
+                    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
                     INDEX idx_v2_order_id (order_id)
                 )
                 """
@@ -100,12 +118,12 @@ def exists(reference: UUID) -> bool:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT 1 FROM v2_orders WHERE reference = %s LIMIT 1", (str(reference),))
+            cursor.execute("SELECT 1 FROM orders WHERE reference = %s LIMIT 1", (str(reference),))
             return cursor.fetchone() is not None
     finally:
         conn.close()
 
-def create_order(request: OrderRequest, status: str, fail_reason: str | None = None) -> OrderResponse:
+def create_order(request: OrderRequest, status: str, failReason: str | None = None) -> OrderResponse:
     conn = _conn()
     now = datetime.now(timezone.utc)
     masked_card = mask_card(request.cardNumber)
@@ -113,30 +131,31 @@ def create_order(request: OrderRequest, status: str, fail_reason: str | None = N
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO v2_orders (
-                    reference, name, callback_url, card_number, amount, currency, status, fail_reason
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO orders (
+                    reference, name, callback_url, mid, card_number, amount, currency, status, failReason
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     str(request.reference),
                     request.name,
                     request.callback,
+                    request.mid,
                     masked_card,
                     float(request.amount),
                     request.currency,
                     status,
-                    fail_reason,
+                    failReason,
                 ),
             )
             row_id = cursor.lastrowid
             order_id = f"PX{row_id}"
-            cursor.execute("UPDATE v2_orders SET order_id = %s WHERE id = %s", (order_id, row_id))
+            cursor.execute("UPDATE orders SET order_id = %s WHERE id = %s", (order_id, row_id))
 
             product_status = "FAIL" if status == "FAIL" else "PROCESSING"
             for product in request.products:
                 cursor.execute(
                     """
-                    INSERT INTO v2_order_products (order_id, product_id, count, spec, status)
+                    INSERT INTO order_products (order_id, product_id, count, spec, status)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
                     (row_id, product.productId, product.count, product.spec, product_status),
@@ -150,6 +169,7 @@ def create_order(request: OrderRequest, status: str, fail_reason: str | None = N
         reference=request.reference,
         orderId=order_id,
         name=request.name,
+        mid=request.mid,
         orderDate=now,
         amount=float(request.amount),
         currency=request.currency,
@@ -164,7 +184,7 @@ def create_order(request: OrderRequest, status: str, fail_reason: str | None = N
             )
             for product in request.products
         ],
-        fail_reason=fail_reason if status == "FAIL" else None,
+        failReason=failReason if status == "FAIL" else None,
     )
 
 
@@ -173,6 +193,7 @@ def _map_row_to_order(order_row: dict, product_rows: list[dict]) -> OrderRespons
         reference=UUID(order_row["reference"]),
         orderId=order_row["order_id"],
         name=order_row["name"],
+        mid=order_row["mid"],
         orderDate=order_row["created_at"],
         amount=float(order_row["amount"]),
         currency=order_row["currency"],
@@ -187,7 +208,7 @@ def _map_row_to_order(order_row: dict, product_rows: list[dict]) -> OrderRespons
             )
             for row in product_rows
         ],
-        fail_reason=order_row["fail_reason"] if order_row["status"] == "FAIL" else None,
+        failReason=(order_row.get("failReason") or order_row.get("fail_reason")) if order_row["status"] == "FAIL" else None,
     )
 
 
@@ -195,12 +216,12 @@ def get_order(reference: UUID) -> OrderResponse | None:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM v2_orders WHERE reference = %s", (str(reference),))
+            cursor.execute("SELECT * FROM orders WHERE reference = %s", (str(reference),))
             order_row = cursor.fetchone()
             if not order_row:
                 return None
             cursor.execute(
-                "SELECT product_id, count, spec, status FROM v2_order_products WHERE order_id = %s ORDER BY id",
+                "SELECT product_id, count, spec, status FROM order_products WHERE order_id = %s ORDER BY id",
                 (order_row["id"],),
             )
             product_rows = cursor.fetchall()
@@ -213,7 +234,7 @@ def get_callback_info(reference: UUID) -> tuple[str, float] | None:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT callback_url, amount FROM v2_orders WHERE reference = %s", (str(reference),))
+            cursor.execute("SELECT callback_url, amount FROM orders WHERE reference = %s", (str(reference),))
             row = cursor.fetchone()
             if row is None:
                 return None
@@ -247,7 +268,7 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             cursor.execute(
                 f"""
                 SELECT reference, callback_url
-                FROM v2_orders
+                FROM orders
                 WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 30 SECOND
                 {min_created_clause}
                 """,
@@ -258,8 +279,8 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
                 refs = [row["reference"] for row in to_shipped]
                 cursor.executemany(
                     """
-                    UPDATE v2_order_products p
-                    JOIN v2_orders o ON p.order_id = o.id
+                    UPDATE order_products p
+                    JOIN orders o ON p.order_id = o.id
                     SET p.status = 'SHIPPED'
                     WHERE o.reference = %s AND p.status = 'PROCESSING'
                     """,
@@ -275,7 +296,7 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             cursor.execute(
                 f"""
                 SELECT reference, callback_url
-                FROM v2_orders
+                FROM orders
                 WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 60 SECOND
                 {min_created_clause}
                 """,
@@ -286,8 +307,8 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
                 refs = [row["reference"] for row in to_delivered]
                 cursor.executemany(
                     """
-                    UPDATE v2_order_products p
-                    JOIN v2_orders o ON p.order_id = o.id
+                    UPDATE order_products p
+                    JOIN orders o ON p.order_id = o.id
                     SET p.status = 'DELIVERED'
                     WHERE o.reference = %s AND p.status IN ('PROCESSING', 'SHIPPED')
                     """,
@@ -303,14 +324,14 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             cursor.execute(
                                 f"""
                 SELECT o.reference, o.callback_url
-                FROM v2_orders o
+                FROM orders o
                 WHERE o.status = 'SUCCESS'
                                     {"AND o.created_at >= %s" if min_created_at is not None else ""}
                   AND EXISTS (
-                    SELECT 1 FROM v2_order_products p WHERE p.order_id = o.id
+                    SELECT 1 FROM order_products p WHERE p.order_id = o.id
                   )
                   AND NOT EXISTS (
-                    SELECT 1 FROM v2_order_products p WHERE p.order_id = o.id AND p.status != 'DELIVERED'
+                    SELECT 1 FROM order_products p WHERE p.order_id = o.id AND p.status != 'DELIVERED'
                   )
                                 """,
                                 min_created_params,
@@ -318,7 +339,7 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             to_completed = cursor.fetchall()
             if to_completed:
                 refs = [row["reference"] for row in to_completed]
-                cursor.executemany("UPDATE v2_orders SET status = 'COMPLETED' WHERE reference = %s", [(ref,) for ref in refs])
+                cursor.executemany("UPDATE orders SET status = 'COMPLETED' WHERE reference = %s", [(ref,) for ref in refs])
                 transitions.extend(
                     [
                         TransitionTarget(reference=UUID(row["reference"]), callback_url=row["callback_url"], target_status="COMPLETED")
@@ -337,9 +358,9 @@ def clear_orders(reference: UUID | None = None) -> int:
     try:
         with conn.cursor() as cursor:
             if reference is None:
-                cursor.execute("DELETE FROM v2_orders")
+                cursor.execute("DELETE FROM orders")
             else:
-                cursor.execute("DELETE FROM v2_orders WHERE reference = %s", (str(reference),))
+                cursor.execute("DELETE FROM orders WHERE reference = %s", (str(reference),))
             affected = cursor.rowcount
         conn.commit()
         return affected

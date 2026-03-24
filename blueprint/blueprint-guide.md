@@ -3,7 +3,7 @@
 ## 1. 目标与范围
 
 ### 1.1 目标
-构建可独立运行的 Mock 平台，支持：
+构建可独立运行的 API Mock 平台，支持：
 1. 接收并处理模拟订单请求（创建、查询、状态推进）。
 2. 以可根据服务规范发起异步回调，模拟真实发起方通知链路。
 3. 提供稳定可复现的测试行为（可控延迟、失败注入、重试）。
@@ -38,6 +38,39 @@
 	- `POST /callback`
 - 本计划及所有 spec 文档均以以上接口路径、字段及响应码为基线。
 
+### 2.2 Blueprint 目录基线
+
+当前 blueprint 至少应包含以下目录与文件：
+
+- `schema/`
+  - `order_server.yaml`
+  - `callback_server.yaml`
+- `spec/`
+  - `order-service.spec.yaml`
+  - `order-service.spec.en.yaml`
+  - `callback-server.spec.yaml`
+  - `callback-server.spec.en.yaml`
+  - `shared-contracts.spec.yaml`
+  - `shared-contracts.spec.en.yaml`
+- `examples/`
+  - `order/`
+  - `callback/`
+- `structure/`
+  - `target-directory-structure.md`
+  - `target-directory-structure.en.md`
+- 根目录文档
+  - `blueprint-guide.md`
+  - `PLAN.en.md`
+  - `README.md`
+
+说明：
+
+- `schema/` 负责接口契约基线
+- `spec/` 负责行为、时序与模块职责约束
+- `examples/` 负责样例 request / response
+- `structure/` 负责目标工程目录规划
+- 根目录文档负责总纲、计划与索引
+
 ## 3. 关键能力清单
 1. **订单管理**：创建订单、查询订单（状态由订单系统处理并通过回调体现）。
 2. **回调仿真**：按照规则发送回调，支持重试与死信记录。
@@ -66,21 +99,40 @@
 - 完善健康检查与运行脚本。
 - 输出使用手册与示例场景。
 
-## 5. 验收标准（DoD）
+## 5. 关键约束
+
+- 接口契约以 `schema/order_server.yaml` 和 `schema/callback_server.yaml` 为准
+- 行为规则以 `spec/` 下文档为准
+- 所有返回状态统一使用大写字符串
+- 订单主数据和订单商品数据必须持久化到数据库
+- 回调记录默认写入日志，不提供数据库查询能力
+- 响应中的 `cardNumber` 必须为前6后4掩码格式
+- 响应与回调中不得暴露 `cvv` 和 `expiry`
+
+## 6. 交付物
+
+- `schema/` 下接口契约文件
+- `spec/` 下服务行为与共享约束文件
+- `examples/` 下 request / response 样例
+- `structure/` 下目录结构设计文档
+- 可运行的 Python Mock 服务代码
+- 单测、集成测试、契约测试与测试报告
+
+## 7. 验收标准（DoD）
 - 所有公开 API 有明确请求/响应契约。
 - 订单状态转换规则有自动化测试覆盖。
 - 回调重试与失败路径可配置并可验证。
 - 日志可关联一次订单全链路。
 - 文档可支撑新成员在 30 分钟内本地启动。
-- 编写全部测试用例，并在测试完成后能输出一个具体测试执行内容的报告，说明每一步执行了什么，涉及到的订单关键字信息
+- 编写全面的测试用例，并在测试完成后能输出一个具体测试执行内容的报告，说明每一步执行了什么，涉及到的订单关键字信息
 - 回调请求与响应可在日志文件中检索与审计。
 
-## 6. 数据库连接信息
+## 8. 数据库连接信息
 - host: localhost
 - port: 3306
 - user: qwire
 - password: Qwire2026
 - database: qwire
 
-## 7. 文档规范
-- 除PLAN.md和spec的文档采用中英双语外,其他文档都用英文
+## 9. 文档规范
+- 除 `blueprint-guide.md` 和 `spec/` 下中英双语 spec 外，其他文档都用英文

@@ -114,6 +114,7 @@ components:
         - reference
         - orderId
         - name
+        - mid
         - orderDate
         - amount
         - currency
@@ -132,6 +133,11 @@ components:
         name:
           type: string
           example: Widget Adapter Order
+        mid:
+          type: string
+          description: Merchant ID
+          maxLength: 10
+          example: "M123456789"
         orderDate:
           type: string
           format: date-time
@@ -150,7 +156,7 @@ components:
           description: Order status (uppercase)
           enum: [SUCCESS, COMPLETED, FAIL]
           example: SUCCESS
-        fail_reason:
+        failReason:
           type: string
           description: Failure reason, only present when status is FAIL
           nullable: true

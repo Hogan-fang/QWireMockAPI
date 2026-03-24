@@ -123,10 +123,10 @@ def create_order(body: OrderRequest):
     logger.info("POST /order request:\n%s", _json(body.model_dump(mode="json")))
 
     if order_db.exists(body.reference):
-        return JSONResponse(status_code=400, content={"status": "FAIL", "fail_reason": "Order already exists"})
+        return JSONResponse(status_code=400, content={"status": "FAIL", "failReason": "Order already exists", "reference": str(body.reference), "name": body.name, "mid": body.mid})
 
     if body.cardNumber.strip().startswith("4"):
-        failed_order = order_db.create_order(body, status="FAIL", fail_reason="Unsupported card type")
+        failed_order = order_db.create_order(body, status="FAIL", failReason="Unsupported card type")
         payload = failed_order.model_dump(mode="json")
         logger.info("POST /order response(400):\n%s", _json(payload))
         return JSONResponse(status_code=400, content=payload)
@@ -138,7 +138,7 @@ def create_order(body: OrderRequest):
         _dispatch_callback(order, callback_url, "ORDER_SUCCESS")
 
     payload = order.model_dump(mode="json")
-    payload.pop("fail_reason", None)
+    payload.pop("failReason", None)
     logger.info("POST /order response(201):\n%s", _json(payload))
     return JSONResponse(status_code=201, content=payload)
 
@@ -150,18 +150,18 @@ def get_order(reference: str = Query(..., description="Order reference (UUID)"))
     except ValueError:
         return JSONResponse(
             status_code=400,
-            content={"status": "FAIL", "fail_reason": "invalid UUID string", "reference": reference},
+            content={"status": "FAIL", "failReason": "invalid UUID string", "reference": reference},
         )
 
     order = order_db.get_order(reference_uuid)
     if order is None:
         return JSONResponse(
             status_code=404,
-            content={"status": "FAIL", "fail_reason": "Order not found", "reference": reference},
+            content={"status": "FAIL", "failReason": "Order not found", "reference": reference},
         )
 
     payload = order.model_dump(mode="json")
-    if order.fail_reason is None:
-        payload.pop("fail_reason", None)
+    if order.failReason is None:
+        payload.pop("failReason", None)
     logger.info("GET /order response:\n%s", _json(payload))
     return JSONResponse(status_code=200, content=payload)
