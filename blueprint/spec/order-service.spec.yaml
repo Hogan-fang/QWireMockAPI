@@ -2,51 +2,59 @@ specVersion: "1.0"
 service: "order-service"
 status: "draft"
 
+sourceNote:
+  - "标记方式与 implementation_plan.md 一致，采用备注说明，不改变 spec 原有结构。"
+  - "来源：需求 = 直接来自项目目标或用户输入要求"
+  - "来源：schema = 直接来自 schema/order_server.yaml"
+  - "来源：共享契约 = 来自 shared-contracts.spec.yaml 的公共规则"
+  - "来源：工程补充 = 为便于实现、测试或交付而增加的工程化设计项"
+
 purpose:
-  - "提供与 order_server.yaml 对齐的订单创建与查询能力"
-  - "为 callback server 提供标准化订单状态数据"
-  - 将订单记录到数据库中，并提供查询接口
-  - 在订单创建或状态变更时，触发回调事件发布  
+  - "提供与 order_server.yaml 对齐的订单创建与查询能力" # 来源：schema
+  - "为 callback server 提供标准化订单状态数据" # 来源：需求+共享契约
+  - "将订单记录到数据库中，并提供查询接口" # 来源：需求
+  - "在订单创建或状态变更时，触发回调事件发布" # 来源：需求+共享契约
 
 functionalModules:
-  - name: "order-api"
+  - name: "order-api" # 来源：schema
     responsibilities:
-      - "接收 POST /order 创建请求"
-      - "处理 GET /order?reference=uuid 查询请求"
-      - "返回与 OpenAPI schema 一致的响应结构"
-  - name: "order-store"
+      - "接收 POST /order 创建请求" # 来源：schema
+      - "处理 GET /order?reference=uuid 查询请求" # 来源：schema
+      - "返回与 OpenAPI schema 一致的响应结构" # 来源：schema
+  - name: "order-store" # 来源：工程补充
     responsibilities:
-      - "订单持久化抽象（mysql）"
-      - "按 reference（UUID）检索，按 orderId 补充索引"
-  - name: "payment-masker"
+      - "订单持久化抽象（mysql）" # 来源：需求+工程补充
+      - "按 reference（UUID）检索，按 orderId 补充索引" # 来源：工程补充
+  - name: "payment-masker" # 来源：工程补充
     responsibilities:
-      - "响应中对 cardNumber 做前6后4掩码"
-      - "确保响应不包含 CVV 与 expiry"
-  - name: "event-publisher"
+      - "响应中对 cardNumber 做前6后4掩码" # 来源：共享契约
+      - "确保响应不包含 CVV 与 expiry" # 来源：共享契约
+  - name: "event-publisher" # 来源：工程补充
     responsibilities:
-      - "订单创建或状态变化后触发回调事件"
+      - "订单创建或状态变化后触发回调事件" # 来源：需求+共享契约
 
 namingConventions:
-  - "接口请求/响应字段、代码变量统一使用小驼峰命名（camelCase）"
-  - "数据库表名与列名统一使用下划线命名（snake_case）"
-  - "如存在跨层映射，需在数据访问层显式维护命名转换（例如 failReason <-> fail_reason）"
+  - "接口请求/响应字段、代码变量统一使用小驼峰命名（camelCase）" # 来源：共享契约
+  - "数据库表名与列名统一使用下划线命名（snake_case）" # 来源：共享契约
+  - "如存在跨层映射，需在数据访问层显式维护命名转换（例如 failReason <-> fail_reason）" # 来源：共享契约
 
 behavior:
-  - "对于4开头的支付卡号，返回400错误，表示不支持的卡类型"
-  - "当支付成功时，不应返回敏感信息，如 CVV 和 expiry，cardNumber 应为掩码格式（前6后4可见）"
-  - "只有支付失败时才返回failReason字段，且该字段应描述失败原因"
-  - "不论何种失败原因，订单状态均为 FAIL"
-  - "所有返回的状态都应为字符串类型，并大写"
-  - "订单查询时，如果 reference 格式不合法，应返回 400 错误，并提供明确的错误信息"
-  - "订单被接受后，订单状态应先为 SUCCESS；商品状态应为 PROCESSING"
-  - "订单创建后约30秒，商品状态应从 PROCESSING 变为 SHIPPED，并触发 ORDER_SHIPPED 回调事件"
-  - "订单创建后约60秒，商品状态应从 SHIPPED 变为 DELIVERED，并触发 ORDER_DELIVERED 回调事件"
-  - "当且仅当全部商品均为 DELIVERED 时，订单状态应从 SUCCESS 变为 COMPLETED，并触发 ORDER_COMPLETED 回调事件"
-  - "订单创建成功时应触发 ORDER_SUCCESS 回调事件"
+  - "对于4开头的支付卡号，返回400错误，表示不支持的卡类型" # 来源：需求
+  - "对于5开头的支付卡号，返回402错误，表示余额不足" # 来源：需求
+  - "当支付成功时，不应返回敏感信息，如 CVV 和 expiry，cardNumber 应为掩码格式（前6后4可见）" # 来源：schema+共享契约
+  - "只有支付失败时才返回failReason字段，且该字段应描述失败原因" # 来源：schema
+  - "不论何种失败原因，订单状态均为 FAIL" # 来源：共享契约
+  - "所有返回的状态都应为字符串类型，并大写" # 来源：schema+共享契约
+  - "订单查询时，如果 reference 格式不合法，应返回 400 错误，并提供明确的错误信息" # 来源：schema+共享契约
+  - "订单被接受后，订单状态应先为 SUCCESS；商品状态应为 PROCESSING" # 来源：需求+共享契约
+  - "订单创建后约30秒，商品状态应从 PROCESSING 变为 SHIPPED，并触发 ORDER_SHIPPED 回调事件" # 来源：需求+共享契约
+  - "订单创建后约60秒，商品状态应从 SHIPPED 变为 DELIVERED，并触发 ORDER_DELIVERED 回调事件" # 来源：需求+共享契约
+  - "当且仅当全部商品均为 DELIVERED 时，订单状态应从 SUCCESS 变为 COMPLETED，并触发 ORDER_COMPLETED 回调事件" # 来源：需求+共享契约
+  - "订单创建成功时应触发 ORDER_SUCCESS 回调事件" # 来源：需求+共享契约
 
 testScenarios:
-  - "POST /order 创建订单成功返回 201 + OrderResponse"
-  - "GET /order 使用非法 UUID 返回 400 + InvalidReferenceResponse"
-  - "GET /order 查询不存在 reference 返回 404"
-  - "OrderResponse 中 cardNumber 为掩码且不包含 cvv/expiry"
-  - "订单状态与商品状态流转：订单 SUCCESS→COMPLETED，商品 PROCESSING→SHIPPED→DELIVERED"
+  - "POST /order 创建订单成功返回 201 + OrderResponse" # 来源：schema
+  - "GET /order 使用非法 UUID 返回 400 + InvalidReferenceResponse" # 来源：schema
+  - "GET /order 查询不存在 reference 返回 404" # 来源：schema
+  - "OrderResponse 中 cardNumber 为掩码且不包含 cvv/expiry" # 来源：schema+共享契约
+  - "订单状态与商品状态流转：订单 SUCCESS→COMPLETED，商品 PROCESSING→SHIPPED→DELIVERED" # 来源：需求+共享契约

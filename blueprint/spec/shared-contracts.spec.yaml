@@ -2,47 +2,53 @@ specVersion: "1.0"
 service: "shared-contracts"
 status: "draft"
 
+sourceNote:
+  - "标记方式与 implementation_plan.md 一致，采用备注说明，不改变 spec 原有结构。"
+  - "来源：需求 = 直接来自项目目标或用户输入要求"
+  - "来源：schema = 直接来自 schema/order_server.yaml 或 schema/callback_server.yaml"
+  - "来源：工程补充 = 为便于统一实现、测试或交付而增加的公共约束"
+
 purpose:
-  - "定义 order-server 与 callback-server 共享的契约规则"
-  - "统一命名、状态、时间与日志约束"
-  - "作为 schema 与实现之间的公共语义补充层"
+  - "定义 order-server 与 callback-server 共享的契约规则" # 来源：工程补充
+  - "统一命名、状态、时间与日志约束" # 来源：工程补充
+  - "作为 schema 与实现之间的公共语义补充层" # 来源：工程补充
 
 contracts:
   naming:
-    - "HTTP 请求与响应字段统一使用 camelCase"
-    - "数据库表名与列名统一使用 snake_case"
-    - "跨层命名差异必须在实现层显式转换"
+    - "HTTP 请求与响应字段统一使用 camelCase" # 来源：工程补充
+    - "数据库表名与列名统一使用 snake_case" # 来源：工程补充
+    - "跨层命名差异必须在实现层显式转换" # 来源：工程补充
 
   status:
-    - "所有订单状态和商品状态均使用大写字符串"
-    - "订单状态允许值：SUCCESS、COMPLETED、FAIL"
-    - "商品状态允许值：PROCESSING、SHIPPED、DELIVERED、FAIL"
+    - "所有订单状态和商品状态均使用大写字符串" # 来源：schema
+    - "订单状态允许值：SUCCESS、COMPLETED、FAIL" # 来源：schema+需求
+    - "商品状态允许值：PROCESSING、SHIPPED、DELIVERED、FAIL" # 来源：schema+需求
 
   persistence:
-    - "订单主数据必须持久化到数据库"
-    - "订单商品数据必须持久化到数据库"
-    - "回调记录默认输出到日志，不要求数据库持久化"
+    - "订单主数据必须持久化到数据库" # 来源：需求
+    - "订单商品数据必须持久化到数据库" # 来源：需求
+    - "回调记录默认输出到日志，不要求数据库持久化" # 来源：需求+工程补充
 
   masking:
-    - "响应中的 cardNumber 必须为前6后4掩码格式"
-    - "CVV 与 expiry 不得出现在订单响应和回调响应中"
+    - "响应中的 cardNumber 必须为前6后4掩码格式" # 来源：schema
+    - "CVV 与 expiry 不得出现在订单响应和回调响应中" # 来源：schema
 
   timing:
-    - "订单创建成功后应立即触发 ORDER_SUCCESS 回调"
-    - "订单创建后约30秒，商品状态推进为 SHIPPED"
-    - "订单创建后约60秒，商品状态推进为 DELIVERED"
-    - "全部商品 DELIVERED 后，订单状态推进为 COMPLETED"
+    - "订单创建成功后应立即触发 ORDER_SUCCESS 回调" # 来源：需求
+    - "订单创建后约30秒，商品状态推进为 SHIPPED" # 来源：需求
+    - "订单创建后约60秒，商品状态推进为 DELIVERED" # 来源：需求
+    - "全部商品 DELIVERED 后，订单状态推进为 COMPLETED" # 来源：需求
 
   callback:
-    - "回调事件类型至少包括 ORDER_SUCCESS、ORDER_SHIPPED、ORDER_DELIVERED、ORDER_COMPLETED"
-    - "回调请求与响应需记录到可阅读日志"
+    - "回调事件类型至少包括 ORDER_SUCCESS、ORDER_SHIPPED、ORDER_DELIVERED、ORDER_COMPLETED" # 来源：需求
+    - "回调请求与响应需记录到可阅读日志" # 来源：工程补充
 
   errorHandling:
-    - "所有失败响应状态统一为 FAIL"
-    - "失败原因字段统一使用 failReason"
-    - "reference 非法时应返回明确错误信息"
+    - "所有失败响应状态统一为 FAIL" # 来源：schema+共享契约
+    - "失败原因字段统一使用 failReason" # 来源：schema
+    - "reference 非法时应返回明确错误信息" # 来源：schema
 
 testScenarios:
-  - "共享状态值与 schema 枚举保持一致"
-  - "共享掩码规则被 order-server 与 callback-server 同时满足"
-  - "共享时序规则在集成测试中可验证"
+  - "共享状态值与 schema 枚举保持一致" # 来源：schema
+  - "共享掩码规则被 order-server 与 callback-server 同时满足" # 来源：schema+工程补充
+  - "共享时序规则在集成测试中可验证" # 来源：需求

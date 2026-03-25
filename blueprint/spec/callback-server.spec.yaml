@@ -2,38 +2,47 @@ specVersion: "1.0"
 service: "callback-server"
 status: "draft"
 
+sourceNote:
+  - "标记方式与 implementation_plan.md 一致，采用备注说明，不改变 spec 原有结构。"
+  - "来源：需求 = 直接来自项目目标或用户输入要求"
+  - "来源：schema = 直接来自 schema/callback_server.yaml"
+  - "来源：共享契约 = 来自 shared-contracts.spec.yaml 的公共规则"
+  - "来源：工程补充 = 为便于实现、测试或交付而增加的工程化设计项"
+
 purpose:
-  - "模拟发起方 callback API，契约对齐 callback_server.yaml"
-  - "支持订单系统回调接收与日志型检查接口说明"
+  - "模拟发起方 callback API，契约对齐 callback_server.yaml" # 来源：需求+schema
+  - "支持订单系统回调接收与日志型检查接口说明" # 来源：需求
+  - "回调信息仅输出到日志，不提供持久化查询能力" # 来源：需求+共享契约
+  - "为订单服务提供回调事件的接收与临时记录能力" # 来源：需求
 
 functionalModules:
-  - name: "callback-check-api"
+  - name: "callback-check-api" # 来源：schema
     responsibilities:
-      - "接收 GET /check?reference=uuid 查询请求"
-      - "对于合法 UUID 统一返回 404，说明回调记录仅日志可见"
-      - "对于非法 UUID 由框架返回 422"
-  - name: "callback-receiver-api"
+      - "接收 GET /check?reference=uuid 查询请求" # 来源：schema
+      - "对于合法 UUID 统一返回 404，说明回调记录仅日志可见" # 来源：schema
+      - "对于非法 UUID 由框架返回 422" # 来源：schema
+  - name: "callback-receiver-api" # 来源：schema
     responsibilities:
-      - "接收 POST /callback 回调请求"
-      - "返回 200(Received) / 400"
-  - name: "callback-record-store"
+      - "接收 POST /callback 回调请求" # 来源：schema
+      - "返回 200(Received) / 400" # 来源：schema
+  - name: "callback-record-store" # 来源：工程补充
     responsibilities:
-      - "记录回调请求体、响应、时间戳到日志文件"
-      - "不做数据库持久化"
+      - "记录回调请求体、响应、时间戳到日志文件" # 来源：工程补充+共享契约
+      - "不做数据库持久化" # 来源：工程补充
 
 behavior:
-  - "对订单金额进行规划，实现有正常回调，无回调"
-  - "回调信息只输出到日志文件"
-  - "回调检查接口不提供持久化查询能力"
-  - "回调服务收到的信息和发出的信息都要记录到可阅读的日志中"
-  - "在检查回调信息时统一返回 404（回调记录仅日志，不可查询）"
-  - "callback payload 中必须包含 mid 字段，并与订单服务契约保持一致"
-  - "回调事件类型应覆盖 ORDER_SUCCESS、ORDER_SHIPPED、ORDER_DELIVERED、ORDER_COMPLETED"
-  - "在接收回调时，对于合法的 OrderResponse 返回 200 和 Received"
-  - "在接收回调时，对于不合法的 OrderResponse 返回 400 和 订单无效的错误信息"
+  - "对订单金额进行规划，实现有正常回调，无回调" # 来源：工程补充
+  - "回调信息只输出到日志文件" # 来源：共享契约+工程补充
+  - "回调检查接口不提供持久化查询能力" # 来源：共享契约
+  - "回调服务收到的信息和发出的信息都要记录到可阅读的日志中" # 来源：共享契约
+  - "在检查回调信息时统一返回 404（回调记录仅日志，不可查询）" # 来源：schema
+  - "callback payload 中必须包含 mid 字段，并与订单服务契约保持一致" # 来源：共享契约
+  - "回调事件类型应覆盖 ORDER_SUCCESS、ORDER_SHIPPED、ORDER_DELIVERED、ORDER_COMPLETED" # 来源：共享契约
+  - "在接收回调时，对于合法的 OrderResponse 返回 200 和 Received" # 来源：schema
+  - "在接收回调时，对于不合法的 OrderResponse 返回 400 和 订单无效的错误信息" # 来源：schema
 
 testScenarios:
-  - "POST /callback 合法 OrderResponse 返回 200 + Received"
-  - "POST /callback 缺字段或字段类型不合法返回 400 + ValidationErrorResponse"
-  - "GET /check 合法 UUID 统一返回 404 + ErrorDetailResponse"
-  - "GET /check 非法 UUID 返回 422"
+  - "POST /callback 合法 OrderResponse 返回 200 + Received" # 来源：schema
+  - "POST /callback 缺字段或字段类型不合法返回 400 + ValidationErrorResponse" # 来源：schema
+  - "GET /check 合法 UUID 统一返回 404 + ErrorDetailResponse" # 来源：schema
+  - "GET /check 非法 UUID 返回 422" # 来源：schema
