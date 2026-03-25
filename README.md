@@ -1,6 +1,6 @@
-# QWire Mock
+# QWire Mock API
 
-QWire Mock provides two FastAPI services:
+QWire Mock API provides two FastAPI services:
 
 - Order API (`POST /order`, `GET /order`) with MySQL persistence
 - Callback API (`POST /callback`, `GET /check`) for callback receiving and log-only check behavior
