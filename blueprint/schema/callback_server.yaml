@@ -15,28 +15,32 @@ servers:
     description: Local callback server
 
 paths:
-  /check:
-    get:
-      summary: Check order callback
-      operationId: check
-      description: Callback records are log-only and not queryable
-      parameters:
-        - in: query
-          name: reference
-          description: Order reference (UUID)
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '404':
-          description: Callback records are log-only and not queryable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorDetailResponse'
-        '422':
-          description: Invalid UUID query parameter
+/check:
+  get:
+    summary: Get callback data by reference
+    operationId: check
+    description: Retrieve cached callback data by order reference for test project integration
+    parameters:
+      - in: query
+        name: reference
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Callback data found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderResponse'
+
+      '404':
+        description: Error (invalid UUID or callback not found)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorDetailResponse'
   /callback:
     post:
       summary: Order status callback
