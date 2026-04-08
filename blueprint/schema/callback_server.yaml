@@ -2,52 +2,55 @@ openapi: 3.0.0
 
 info:
   title: QWire Callback API v2
-  version: "2.0.0"
-  description: Callback receiving API with log-only query behavior
+  version: "2.1.0"
+  description: Callback receiving API with relay query behavior for test projects
   contact:
     email: you@your-company.com
-  license:
-    name: Apache 2.0
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
 
 servers:
   - url: http://127.0.0.1:8100
-    description: Local callback server
 
 paths:
-/check:
-  get:
-    summary: Get callback data by reference
-    operationId: check
-    description: Retrieve cached callback data by order reference for test project integration
-    parameters:
-      - in: query
-        name: reference
-        required: true
-        schema:
-          type: string
-          format: uuid
-    responses:
-      '200':
-        description: Callback data found
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrderResponse'
+  /check:
+    get:
+      summary: Get callback data by reference
+      operationId: check
+      description: Retrieve cached callback data by order reference
+      parameters:
+        - in: query
+          name: reference
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Callback data found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
 
-      '404':
-        description: Error (invalid UUID or callback not found)
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorDetailResponse'
+        '404':
+          description: Callback data not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetailResponse'
+
+        '422':
+          description: Invalid UUID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetailResponse'
+
   /callback:
     post:
       summary: Order status callback
       operationId: callback
       description: Receive callback from order system
       requestBody:
-        description: Callback info
         required: true
         content:
           application/json:
@@ -60,6 +63,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Received'
+
         '400':
           description: Invalid request body
           content:
@@ -68,11 +72,8 @@ paths:
                 $ref: '#/components/schemas/ValidationErrorResponse'
 
 components:
-
   schemas:
-    # =========================
-    # Received Schemas
-    # =========================
+
     Received:
       type: object
       required:
@@ -80,7 +81,6 @@ components:
       properties:
         message:
           type: string
-          format: string
           example: OK
 
     ErrorDetailResponse:
@@ -90,7 +90,7 @@ components:
       properties:
         detail:
           type: string
-          example: Callback records are log-only and not queryable
+          example: Callback data not found
 
     ValidationErrorResponse:
       type: object
@@ -107,13 +107,8 @@ components:
             type: object
             additionalProperties: true
 
-    # =========================
-    # Order Schemas
-    # =========================
-
     OrderResponse:
       type: object
-      description: Query/callback result returns a masked card number (first 6 and last 4 visible), without CVV and expiry
       required:
         - reference
         - orderId
@@ -129,53 +124,31 @@ components:
         reference:
           type: string
           format: uuid
-          example: d290f1ee-6c54-4b01-90e6-d701748f0851
         orderId:
           type: string
-          format: string
-          example: PX39280930012
         name:
           type: string
-          example: Widget Adapter Order
         mid:
           type: string
-          description: Merchant ID
-          maxLength: 10
-          example: "M123456789"
         orderDate:
           type: string
           format: date-time
-          example: 2024-01-10T10:15:30Z
         amount:
           type: number
-          format: double
-          description: Amount
-          example: 99.99
         currency:
           type: string
-          description: Currency
-          example: "USD"
         status:
           type: string
-          description: Order status (uppercase)
           enum: [SUCCESS, COMPLETED, FAIL]
-          example: SUCCESS
         failReason:
           type: string
-          description: Failure reason, only present when status is FAIL
           nullable: true
         cardNumber:
           type: string
-          description: Masked card number (first 6 and last 4 digits visible)
-          example: "555555******4444"
         products:
           type: array
           items:
             $ref: '#/components/schemas/ProductResponse'
-
-    # =========================
-    # Product Schemas
-    # =========================
 
     ProductBase:
       type: object
@@ -186,16 +159,10 @@ components:
       properties:
         productId:
           type: string
-          example: 29838-02
         count:
           type: integer
-          format: int32
-          minimum: 0
-          maximum: 100
-          example: 2
         spec:
           type: string
-          example: xs-83
 
     ProductResponse:
       allOf:
@@ -204,6 +171,4 @@ components:
           properties:
             status:
               type: string
-              description: Product status (uppercase)
               enum: [PROCESSING, SHIPPED, DELIVERED, FAIL]
-              example: PROCESSING
