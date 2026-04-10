@@ -45,7 +45,7 @@ def test_v2_check_not_found_returns_404(record_order_keyword):
     assert "log-only" in response.json()["detail"]
 
 
-@pytest.mark.case(point="POST /callback invalid payload returns 400 with error details")
+@pytest.mark.case(point="POST /callback invalid payload returns 400 with unified HTTP error details")
 def test_v2_callback_invalid_payload_returns_400(record_order_keyword):
     ref = str(uuid4())
     record_order_keyword(ref)
@@ -55,5 +55,6 @@ def test_v2_callback_invalid_payload_returns_400(record_order_keyword):
     response = client.post("/callback", json=payload)
     assert response.status_code == 400
     body = response.json()
-    assert body["message"] == "Invalid order payload"
+    assert body["code"] == "invalid_request"
+    assert body["detail"] == "Invalid order payload"
     assert "errors" in body

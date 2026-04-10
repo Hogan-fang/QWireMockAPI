@@ -1,48 +1,88 @@
-specVersion: "1.0"
-service: "callback-server"
-status: "draft"
+specVersion: "2.0"
+service: callback_server
+status: ready
 
-sourceNote:
-  - "标记方式与 implementation_plan.md 一致，采用备注说明，不改变 spec 原有结构。"
-  - "来源：需求 = 直接来自项目目标或用户输入要求"
-  - "来源：schema = 直接来自 schema/callback_server.yaml"
-  - "来源：共享契约 = 来自 shared-contracts.spec.yaml 的公共规则"
-  - "来源：工程补充 = 为便于实现、测试或交付而增加的工程化设计项"
+documentRole:
+  value: callback_server 行为规格，供 schema、实现代码和测试样例生成使用
+  source: requirement
 
-purpose:
-  - "模拟发起方 callback API，契约对齐 callback_server.yaml" # 来源：需求+schema
-  - "支持订单系统回调接收与日志型检查接口说明" # 来源：需求
-  - "回调信息仅输出到日志，不提供持久化查询能力" # 来源：需求+共享契约
-  - "为订单服务提供回调事件的接收与临时记录能力" # 来源：需求
+sourceLegend:
+  requirement: 直接来自业务需求或用户补充规则
+  schema: 直接来自 blueprint/schema/callback_server.yaml
+  engineering: 为便于实现、测试与日志审计而增加的工程化设计
 
-functionalModules:
-  - name: "callback-check-api" # 来源：schema
-    responsibilities:
-      - "接收 GET /check?reference=uuid 查询请求" # 来源：schema
-      - "对于合法 UUID 统一返回 404，说明回调记录仅日志可见" # 来源：schema
-      - "对于非法 UUID 由框架返回 422" # 来源：schema
-  - name: "callback-receiver-api" # 来源：schema
-    responsibilities:
-      - "接收 POST /callback 回调请求" # 来源：schema
-      - "返回 200(Received) / 400" # 来源：schema
-  - name: "callback-record-store" # 来源：工程补充
-    responsibilities:
-      - "记录回调请求体、响应、时间戳到日志文件" # 来源：工程补充+共享契约
-      - "不做数据库持久化" # 来源：工程补充
+apiContract:
+  receiveCallback:
+    endpoint: POST /callback
+    source: schema
+    requestModel:
+      value: OrderResponse
+      source: requirement
+    responses:
+      - statusCode: 200
+        when: 请求体通过校验
+        action:
+          - 将数据写入内存缓存
+          - 将请求内容写入日志
+        responseModel: Received
+        source: requirement
+      - statusCode: 400
+        when: 请求体不符合 OrderResponse 或缺少关键字段
+        responseModel: ValidationErrorResponse
+        source: requirement
 
-behavior:
-  - "对订单金额进行规划，实现有正常回调，无回调" # 来源：工程补充
-  - "回调信息只输出到日志文件" # 来源：共享契约+工程补充
-  - "回调检查接口不提供持久化查询能力" # 来源：共享契约
-  - "回调服务收到的信息和发出的信息都要记录到可阅读的日志中" # 来源：共享契约
-  - "在检查回调信息时统一返回 404（回调记录仅日志，不可查询）" # 来源：schema
-  - "callback payload 中必须包含 mid 字段，并与订单服务契约保持一致" # 来源：共享契约
-  - "回调事件类型应覆盖 ORDER_SUCCESS、ORDER_SHIPPED、ORDER_DELIVERED、ORDER_COMPLETED" # 来源：共享契约
-  - "在接收回调时，对于合法的 OrderResponse 返回 200 和 Received" # 来源：schema
-  - "在接收回调时，对于不合法的 OrderResponse 返回 400 和 订单无效的错误信息" # 来源：schema
+  checkCallback:
+    endpoint: GET /check?reference={uuid}
+    source: schema
+    responses:
+      - statusCode: 200
+        when: reference 为合法 UUID 且内存中存在记录
+        responseModel: OrderResponse
+        source: requirement
+      - statusCode: 404
+        when: reference 为合法 UUID 但不存在记录
+        responseModel: ErrorDetailResponse
+        source: requirement
+      - statusCode: 422
+        when: reference 不是合法 UUID
+        responseModel: ErrorDetailResponse
+        source: requirement
 
-testScenarios:
-  - "POST /callback 合法 OrderResponse 返回 200 + Received" # 来源：schema
-  - "POST /callback 缺字段或字段类型不合法返回 400 + ValidationErrorResponse" # 来源：schema
-  - "GET /check 合法 UUID 统一返回 404 + ErrorDetailResponse" # 来源：schema
-  - "GET /check 非法 UUID 返回 422" # 来源：schema
+storagePolicy:
+  callbackCache:
+    value: callback 数据仅保存在内存中
+    source: requirement
+  persistence:
+    value: 不做 DB 持久化
+    source: requirement
+  logging:
+    value: 收到的 callback 数据和查询结果都需输出到可阅读日志中
+    source: requirement
+
+payloadRules:
+  - rule: callback 数据结构必须符合 OrderResponse
+    source: requirement
+  - rule: cardNumber 应保持掩码格式，且不得包含 cvv 与 expiry
+    source: requirement
+  - rule: status 字段使用大写字符串，与 order_server 保持一致
+    source: requirement
+
+interactionRules:
+  - rule: POST 校验成功后先写内存，再返回 200
+    source: requirement
+  - rule: GET /check 仅按 reference 从内存查询，不访问 DB
+    source: requirement
+  - rule: 内存无记录时返回 404，不返回空 200
+    source: requirement
+
+validationChecklist:
+  - item: POST /callback 合法 OrderResponse 返回 200 + Received
+    source: requirement
+  - item: POST /callback 非法 payload 返回 400 + ValidationErrorResponse
+    source: requirement
+  - item: GET /check 非法 UUID 返回 422
+    source: requirement
+  - item: GET /check 存在 reference 返回 200 + OrderResponse
+    source: requirement
+  - item: GET /check 不存在 reference 返回 404
+    source: requirement

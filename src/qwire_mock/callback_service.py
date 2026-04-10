@@ -54,8 +54,21 @@ def _json(payload: dict) -> str:
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    logger.warning("Invalid callback payload: %s", exc.errors())
-    return JSONResponse(status_code=400, content={"message": "Invalid order payload", "errors": exc.errors()})
+    logger.warning("Invalid callback payload: path=%s errors=%s", request.url.path, exc.errors())
+    return JSONResponse(
+        status_code=400,
+        content={
+            "code": "invalid_request",
+            "detail": "Invalid order payload",
+            "errors": exc.errors(),
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
+    code = "resource_not_found" if exc.status_code == 404 else "http_error"
+    return JSONResponse(status_code=exc.status_code, content={"code": code, "detail": exc.detail})
 
 
 @app.post("/callback", response_model=Received)

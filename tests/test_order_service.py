@@ -178,17 +178,17 @@ def test_v2_create_order_invalid_uuid_returns_422(order_client: TestClient, reco
     assert "detail" in response.json()
 
 
-@pytest.mark.case(point="GET /order invalid UUID returns 400")
-def test_v2_get_order_invalid_uuid_returns_400(order_client: TestClient, record_order_keyword):
+@pytest.mark.case(point="GET /order invalid UUID returns 422 with unified HTTP error payload")
+def test_v2_get_order_invalid_uuid_returns_422(order_client: TestClient, record_order_keyword):
     record_order_keyword("not-a-uuid")
     response = order_client.get("/order", params={"reference": "not-a-uuid"})
-    assert response.status_code == 400
+    assert response.status_code == 422
     body = response.json()
-    assert body["status"] == "FAIL"
-    assert body["failReason"] == "invalid UUID string"
+    assert body["code"] == "invalid_reference"
+    assert body["detail"] == "invalid UUID string"
 
 
-@pytest.mark.case(point="GET /order order not found returns 404")
+@pytest.mark.case(point="GET /order order not found returns 404 with unified HTTP error payload")
 def test_v2_get_order_not_found_returns_404(
     order_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -200,8 +200,9 @@ def test_v2_get_order_not_found_returns_404(
     response = order_client.get("/order", params={"reference": ref})
     assert response.status_code == 404
     body = response.json()
-    assert body["status"] == "FAIL"
-    assert body["failReason"] == "Order not found"
+    assert body["code"] == "order_not_found"
+    assert body["detail"] == "Order not found"
+    assert body["reference"] == ref
 
 
 @pytest.mark.case(point="GET /order successful query returns 200")

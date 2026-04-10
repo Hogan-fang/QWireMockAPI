@@ -7,7 +7,8 @@ import urllib.request
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from qwire_mock import order_db
@@ -118,6 +119,18 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="QWire Order API v2", version="2.0.0", lifespan=lifespan)
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    logger.warning("request validation failed: path=%s errors=%s", request.url.path, exc.errors())
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "invalid_request",
+            "detail": "Request validation failed",
+        },
+    )
+
+
 @app.post("/order")
 def create_order(body: OrderRequest):
     logger.info("POST /order request:\n%s", _json(body.model_dump(mode="json")))
@@ -149,15 +162,15 @@ def get_order(reference: str = Query(..., description="Order reference (UUID)"))
         reference_uuid = UUID(reference)
     except ValueError:
         return JSONResponse(
-            status_code=400,
-            content={"status": "FAIL", "failReason": "invalid UUID string", "reference": reference},
+            status_code=422,
+            content={"code": "invalid_reference", "detail": "invalid UUID string", "reference": reference},
         )
 
     order = order_db.get_order(reference_uuid)
     if order is None:
         return JSONResponse(
             status_code=404,
-            content={"status": "FAIL", "failReason": "Order not found", "reference": reference},
+            content={"code": "order_not_found", "detail": "Order not found", "reference": reference},
         )
 
     payload = order.model_dump(mode="json")

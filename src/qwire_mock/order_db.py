@@ -8,6 +8,9 @@ from pymysql.cursors import DictCursor
 from qwire_mock.config import load_config
 from qwire_mock.schemas import OrderRequest, OrderResponse, ProductResponse
 
+ORDER_TABLE = "`order`"
+ORDER_PRODUCT_TABLE = "order_product"
+
 
 @dataclass
 class TransitionTarget:
@@ -61,50 +64,50 @@ def init_db() -> None:
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS orders (
+                f"""
+                CREATE TABLE IF NOT EXISTS {ORDER_TABLE} (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    mid VARCHAR(10) NOT NULL,
                     reference VARCHAR(36) NOT NULL UNIQUE,
                     order_id VARCHAR(64) UNIQUE,
                     name VARCHAR(255) NOT NULL,
-                    callback_url VARCHAR(512) NOT NULL,
-                    mid VARCHAR(10) NOT NULL,
-                    card_number VARCHAR(64) NOT NULL,
                     amount DOUBLE NOT NULL,
                     currency VARCHAR(16) NOT NULL,
                     status VARCHAR(32) NOT NULL,
-                    failReason VARCHAR(255) DEFAULT NULL,
+                    card_number VARCHAR(64) NOT NULL,
+                    fail_reason VARCHAR(255) DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
+                    callback_url VARCHAR(512) NOT NULL,
+                    )
                 """
             )
-            cursor.execute("SHOW COLUMNS FROM orders LIKE 'mid'")
+            cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'mid'")
             has_mid = cursor.fetchone() is not None
             if not has_mid:
-                cursor.execute("ALTER TABLE orders ADD COLUMN mid VARCHAR(10) NOT NULL DEFAULT 'UNKNOWN'")
-            cursor.execute("SHOW COLUMNS FROM orders LIKE 'failReason'")
-            has_fail_reason_camel = cursor.fetchone() is not None
-            if not has_fail_reason_camel:
-                cursor.execute("SHOW COLUMNS FROM orders LIKE 'fail_reason'")
-                has_fail_reason_snake = cursor.fetchone() is not None
-                if has_fail_reason_snake:
+                cursor.execute(f"ALTER TABLE {ORDER_TABLE} ADD COLUMN mid VARCHAR(10) NOT NULL DEFAULT 'UNKNOWN'")
+            cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'fail_reason'")
+            has_fail_reason_snake = cursor.fetchone() is not None
+            if not has_fail_reason_snake:
+                cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'failReason'")
+                has_fail_reason_camel = cursor.fetchone() is not None
+                if has_fail_reason_camel:
                     cursor.execute(
-                        "ALTER TABLE orders CHANGE fail_reason failReason VARCHAR(255) DEFAULT NULL"
+                        f"ALTER TABLE {ORDER_TABLE} CHANGE failReason fail_reason VARCHAR(255) DEFAULT NULL"
                     )
                 else:
                     cursor.execute(
-                        "ALTER TABLE orders ADD COLUMN failReason VARCHAR(255) DEFAULT NULL"
+                        f"ALTER TABLE {ORDER_TABLE} ADD COLUMN fail_reason VARCHAR(255) DEFAULT NULL"
                     )
             cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS order_products (
+                f"""
+                CREATE TABLE IF NOT EXISTS {ORDER_PRODUCT_TABLE} (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     order_id INT NOT NULL,
                     product_id VARCHAR(64) NOT NULL,
                     count INT NOT NULL,
                     spec VARCHAR(128) NOT NULL,
                     status VARCHAR(32) NOT NULL,
-                    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+                    FOREIGN KEY (order_id) REFERENCES {ORDER_TABLE}(id) ON DELETE CASCADE,
                     INDEX idx_v2_order_id (order_id)
                 )
                 """
@@ -118,7 +121,7 @@ def exists(reference: UUID) -> bool:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT 1 FROM orders WHERE reference = %s LIMIT 1", (str(reference),))
+            cursor.execute(f"SELECT 1 FROM {ORDER_TABLE} WHERE reference = %s LIMIT 1", (str(reference),))
             return cursor.fetchone() is not None
     finally:
         conn.close()
@@ -130,9 +133,9 @@ def create_order(request: OrderRequest, status: str, failReason: str | None = No
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                """
-                INSERT INTO orders (
-                    reference, name, callback_url, mid, card_number, amount, currency, status, failReason
+                f"""
+                INSERT INTO {ORDER_TABLE} (
+                    reference, name, callback_url, mid, card_number, amount, currency, status, fail_reason
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
@@ -149,13 +152,13 @@ def create_order(request: OrderRequest, status: str, failReason: str | None = No
             )
             row_id = cursor.lastrowid
             order_id = f"PX{row_id}"
-            cursor.execute("UPDATE orders SET order_id = %s WHERE id = %s", (order_id, row_id))
+            cursor.execute(f"UPDATE {ORDER_TABLE} SET order_id = %s WHERE id = %s", (order_id, row_id))
 
             product_status = "FAIL" if status == "FAIL" else "PROCESSING"
             for product in request.products:
                 cursor.execute(
-                    """
-                    INSERT INTO order_products (order_id, product_id, count, spec, status)
+                    f"""
+                    INSERT INTO {ORDER_PRODUCT_TABLE} (order_id, product_id, count, spec, status)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
                     (row_id, product.productId, product.count, product.spec, product_status),
@@ -216,12 +219,12 @@ def get_order(reference: UUID) -> OrderResponse | None:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM orders WHERE reference = %s", (str(reference),))
+            cursor.execute(f"SELECT * FROM {ORDER_TABLE} WHERE reference = %s", (str(reference),))
             order_row = cursor.fetchone()
             if not order_row:
                 return None
             cursor.execute(
-                "SELECT product_id, count, spec, status FROM order_products WHERE order_id = %s ORDER BY id",
+                f"SELECT product_id, count, spec, status FROM {ORDER_PRODUCT_TABLE} WHERE order_id = %s ORDER BY id",
                 (order_row["id"],),
             )
             product_rows = cursor.fetchall()
@@ -234,7 +237,7 @@ def get_callback_info(reference: UUID) -> tuple[str, float] | None:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT callback_url, amount FROM orders WHERE reference = %s", (str(reference),))
+            cursor.execute(f"SELECT callback_url, amount FROM {ORDER_TABLE} WHERE reference = %s", (str(reference),))
             row = cursor.fetchone()
             if row is None:
                 return None
@@ -268,7 +271,7 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             cursor.execute(
                 f"""
                 SELECT reference, callback_url
-                FROM orders
+                FROM {ORDER_TABLE}
                 WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 30 SECOND
                 {min_created_clause}
                 """,
@@ -278,9 +281,9 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             if to_shipped:
                 refs = [row["reference"] for row in to_shipped]
                 cursor.executemany(
-                    """
-                    UPDATE order_products p
-                    JOIN orders o ON p.order_id = o.id
+                    f"""
+                    UPDATE {ORDER_PRODUCT_TABLE} p
+                    JOIN {ORDER_TABLE} o ON p.order_id = o.id
                     SET p.status = 'SHIPPED'
                     WHERE o.reference = %s AND p.status = 'PROCESSING'
                     """,
@@ -296,7 +299,7 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             cursor.execute(
                 f"""
                 SELECT reference, callback_url
-                FROM orders
+                FROM {ORDER_TABLE}
                 WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 60 SECOND
                 {min_created_clause}
                 """,
@@ -306,9 +309,9 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
             if to_delivered:
                 refs = [row["reference"] for row in to_delivered]
                 cursor.executemany(
-                    """
-                    UPDATE order_products p
-                    JOIN orders o ON p.order_id = o.id
+                    f"""
+                    UPDATE {ORDER_PRODUCT_TABLE} p
+                    JOIN {ORDER_TABLE} o ON p.order_id = o.id
                     SET p.status = 'DELIVERED'
                     WHERE o.reference = %s AND p.status IN ('PROCESSING', 'SHIPPED')
                     """,
@@ -322,24 +325,24 @@ def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[
                 )
 
             cursor.execute(
-                                f"""
+                f"""
                 SELECT o.reference, o.callback_url
-                FROM orders o
+                FROM {ORDER_TABLE} o
                 WHERE o.status = 'SUCCESS'
-                                    {"AND o.created_at >= %s" if min_created_at is not None else ""}
+                {"AND o.created_at >= %s" if min_created_at is not None else ""}
                   AND EXISTS (
-                    SELECT 1 FROM order_products p WHERE p.order_id = o.id
+                    SELECT 1 FROM {ORDER_PRODUCT_TABLE} p WHERE p.order_id = o.id
                   )
                   AND NOT EXISTS (
-                    SELECT 1 FROM order_products p WHERE p.order_id = o.id AND p.status != 'DELIVERED'
+                    SELECT 1 FROM {ORDER_PRODUCT_TABLE} p WHERE p.order_id = o.id AND p.status != 'DELIVERED'
                   )
-                                """,
-                                min_created_params,
+                """,
+                min_created_params,
             )
             to_completed = cursor.fetchall()
             if to_completed:
                 refs = [row["reference"] for row in to_completed]
-                cursor.executemany("UPDATE orders SET status = 'COMPLETED' WHERE reference = %s", [(ref,) for ref in refs])
+                cursor.executemany(f"UPDATE {ORDER_TABLE} SET status = 'COMPLETED' WHERE reference = %s", [(ref,) for ref in refs])
                 transitions.extend(
                     [
                         TransitionTarget(reference=UUID(row["reference"]), callback_url=row["callback_url"], target_status="COMPLETED")
@@ -358,9 +361,9 @@ def clear_orders(reference: UUID | None = None) -> int:
     try:
         with conn.cursor() as cursor:
             if reference is None:
-                cursor.execute("DELETE FROM orders")
+                cursor.execute(f"DELETE FROM {ORDER_TABLE}")
             else:
-                cursor.execute("DELETE FROM orders WHERE reference = %s", (str(reference),))
+                cursor.execute(f"DELETE FROM {ORDER_TABLE} WHERE reference = %s", (str(reference),))
             affected = cursor.rowcount
         conn.commit()
         return affected
