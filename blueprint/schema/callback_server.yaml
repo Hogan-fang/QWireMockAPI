@@ -36,14 +36,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorDetailResponse'
+                $ref: '#/components/schemas/HttpErrorResponse'
 
         '422':
           description: Invalid UUID
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorDetailResponse'
+                $ref: '#/components/schemas/HttpErrorResponse'
 
   /callback:
     post:
@@ -69,7 +69,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ValidationErrorResponse'
+                $ref: '#/components/schemas/HttpErrorResponse'
 
 components:
   schemas:
@@ -83,29 +83,18 @@ components:
           type: string
           example: OK
 
-    ErrorDetailResponse:
+    HttpErrorResponse:
       type: object
       required:
+        - code
         - detail
       properties:
+        code:
+          type: string
+          example: invalid_request
         detail:
           type: string
-          example: Callback data not found
-
-    ValidationErrorResponse:
-      type: object
-      required:
-        - message
-        - errors
-      properties:
-        message:
-          type: string
           example: Invalid order payload
-        errors:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
 
     OrderResponse:
       type: object

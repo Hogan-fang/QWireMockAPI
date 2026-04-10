@@ -7,7 +7,7 @@ This directory plans a **Python-based** simulation platform including:
 > Constraint: this blueprint does not depend on, reference, or modify any existing implementation in this repository.
 
 ## Document Index
-- `spec/order-service.spec.yaml`: order processing service specification
+- `spec/order-server.spec.yaml`: order processing service specification
 - `spec/callback-server.spec.yaml`: callback service specification
 - `spec/shared-contracts.spec.yaml`: shared cross-module contracts and conventions
 - `structure/target-directory-structure.md`: target project structure

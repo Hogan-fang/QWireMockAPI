@@ -9,6 +9,7 @@ documentRole:
 sourceLegend:
   requirement: 直接来自业务需求或用户补充规则
   schema: 直接来自 blueprint/schema/callback_server.yaml
+  guideline: 直接来自 QWireGuideline/guideline/project-guideline.md
   engineering: 为便于实现、测试与日志审计而增加的工程化设计
 
 apiContract:
@@ -28,8 +29,9 @@ apiContract:
         source: requirement
       - statusCode: 400
         when: 请求体不符合 OrderResponse 或缺少关键字段
-        responseModel: ValidationErrorResponse
-        source: requirement
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
 
   checkCallback:
     endpoint: GET /check?reference={uuid}
@@ -41,12 +43,14 @@ apiContract:
         source: requirement
       - statusCode: 404
         when: reference 为合法 UUID 但不存在记录
-        responseModel: ErrorDetailResponse
-        source: requirement
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
       - statusCode: 422
         when: reference 不是合法 UUID
-        responseModel: ErrorDetailResponse
-        source: requirement
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
 
 storagePolicy:
   callbackCache:
@@ -66,6 +70,8 @@ payloadRules:
     source: requirement
   - rule: status 字段使用大写字符串，与 order_server 保持一致
     source: requirement
+  - rule: HTTP 错误响应仅返回通用 `code + detail`，不得返回内部校验明细或 `errors` 字段
+    source: guideline
 
 interactionRules:
   - rule: POST 校验成功后先写内存，再返回 200

@@ -3,7 +3,7 @@
   "name": "Widget Adapter Order",
   "callback": "http://127.0.0.1:8100/callback",
   "mid": "M123456789",
-  "cardNumber": "5555555555554444",
+  "cardNumber": "6222222222222222",
   "cvv": "123",
   "expiry": "12/28",
   "amount": 99.99,

@@ -22,7 +22,7 @@
 - 创建订单：`POST /order`
 - 查询订单：`GET /order?reference={uuid}`
 - `4` 开头卡号返回 `400`
-- `5` 开头卡号返回 `402`
+- `5` 开头卡号返回 `400`，并携带 `failReason=Insufficient balance`
 - 成功状态：`SUCCESS / PROCESSING`
 - `30s -> SHIPPED`，`60s -> DELIVERED`，最终 `COMPLETED`
 - 关键状态变化触发 `ORDER_*` 回调
@@ -51,7 +51,7 @@
 
 - 总纲：`../implementation-plan.md`
 - 路线图：`./blueprint-roadmap.md`
-- Order 规格：`../spec/order-service.spec.yaml`
+- Order 规格：`../spec/order-server.spec.yaml`
 - Callback 规格：`../spec/callback-server.spec.yaml`
 - Shared 规格：`../spec/shared-contracts.spec.yaml`
 

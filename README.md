@@ -54,13 +54,15 @@ Default ports:
 ### Order API (`:9100`)
 
 - `POST /order`
-  - Success: `201`, `status="SUCCESS"`
-  - Invalid card (`cardNumber` starts with `4`): `400`, `status="FAIL"`, `failReason="Unsupported card type"`
-  - Duplicate reference: `400`, `status="FAIL"`, `failReason="Order already exists"`
+  - Success: `201`, `status="SUCCESS"` (for supported card prefixes such as `6*`)
+  - Unsupported card type (`cardNumber` starts with `4`): `400`, `status="FAIL"`, `failReason="Unsupported card type"`
+  - Insufficient balance (`cardNumber` starts with `5`): `400`, `status="FAIL"`, `failReason="Insufficient balance"`
+  - Duplicate reference: `409`, `{ "code": "order_conflict", "detail": "Order already exists" }`
+  - Request validation failure: `422`, `{ "code": "invalid_request", "detail": "Request validation failed" }`
 - `GET /order?reference=<uuid>`
   - Found: `200`
-  - Invalid UUID: `400`, `failReason="invalid UUID string"`
-  - Not found: `404`, `failReason="Order not found"`
+  - Invalid UUID: `422`, `{ "code": "invalid_reference", "detail": "invalid UUID string" }`
+  - Not found: `404`, `{ "code": "order_not_found", "detail": "Order not found" }`
 
 Order status lifecycle:
 
@@ -86,9 +88,9 @@ If order `amount >= QWIRE_V2_CALLBACK_SKIP_AMOUNT_GTE` (default `1000`), callbac
 
 - `POST /callback`
   - Valid payload: `200`, body `{ "message": "OK" }`
-  - Invalid payload: `400`, body with validation errors
+  - Invalid payload: `400`, body `{ "code": "invalid_request", "detail": "Invalid order payload" }`
 - `GET /check?reference=<uuid>`
-  - Always `404` (callback records are log-only and not queryable)
+  - Missing record: `404`, body `{ "code": "resource_not_found", "detail": "Callback records are log-only and not queryable" }`
 
 ## Naming Conventions
 

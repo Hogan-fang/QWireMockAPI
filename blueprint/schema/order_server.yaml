@@ -31,23 +31,11 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Order found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderResponse'
-        '400':
-          description: Invalid reference (e.g. not a valid UUID)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderQueryErrorResponse'
+          $ref: '#/components/responses/OrderQuerySuccessResponse'
+        '422':
+          $ref: '#/components/responses/InvalidReferenceResponse'
         '404':
-          description: Order not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderQueryErrorResponse'
+          $ref: '#/components/responses/OrderNotFoundResponse'
 
     post:
       summary: Create order
@@ -62,21 +50,144 @@ paths:
               $ref: '#/components/schemas/OrderRequest'
       responses:
         '201':
-          description: Order created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrderResponse'
+          $ref: '#/components/responses/OrderCreateSuccessResponse'
         '400':
-          description: Invalid input (e.g. unsupported card type) or order already exists
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/OrderResponse'
-                  - $ref: '#/components/schemas/OrderCreateErrorResponse'
+          $ref: '#/components/responses/OrderBusinessFailure400Response'
+        '409':
+          $ref: '#/components/responses/OrderConflictResponse'
+        '422':
+          $ref: '#/components/responses/InvalidOrderRequestResponse'
 
 components:
+
+  responses:
+    OrderCreateSuccessResponse:
+      description: Order created
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OrderResponse'
+          example:
+            reference: d290f1ee-6c54-4b01-90e6-d701748f0851
+            orderId: PX39280930012
+            name: Widget Adapter Order
+            mid: M123456789
+            orderDate: 2024-01-10T10:15:30Z
+            amount: 99.99
+            currency: USD
+            status: SUCCESS
+            cardNumber: 622222******2222
+            products:
+              - productId: 29838-02
+                count: 2
+                spec: xs-83
+                status: PROCESSING
+
+    OrderBusinessFailure400Response:
+      description: Business rejection (e.g. unsupported card type or insufficient balance)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OrderBusinessFailureResponse'
+          examples:
+            unsupportedCardType:
+              summary: Card starts with 4
+              value:
+                reference: d290f1ee-6c54-4b01-90e6-d701748f0851
+                orderId: PX39280930013
+                name: Widget Adapter Order
+                mid: M123456789
+                orderDate: 2024-01-10T10:15:30Z
+                amount: 99.99
+                currency: USD
+                status: FAIL
+                failReason: Unsupported card type
+                cardNumber: 411111******1111
+                products:
+                  - productId: 29838-02
+                    count: 2
+                    spec: xs-83
+                    status: FAIL
+            insufficientBalance:
+              summary: Card starts with 5
+              value:
+                reference: e390f1ee-6c54-4b01-90e6-d701748f0852
+                orderId: PX39280930014
+                name: Widget Adapter Order
+                mid: M123456789
+                orderDate: 2024-01-10T10:15:30Z
+                amount: 188.88
+                currency: USD
+                status: FAIL
+                failReason: Insufficient balance
+                cardNumber: 522222******2222
+                products:
+                  - productId: 29838-03
+                    count: 1
+                    spec: m-10
+                    status: FAIL
+
+    OrderConflictResponse:
+      description: Duplicate reference or request conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HttpErrorResponse'
+          example:
+            code: order_conflict
+            detail: Order already exists
+
+    InvalidOrderRequestResponse:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HttpErrorResponse'
+          example:
+            code: invalid_request
+            detail: Request validation failed
+
+    OrderQuerySuccessResponse:
+      description: Order found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OrderResponse'
+          example:
+            reference: d290f1ee-6c54-4b01-90e6-d701748f0851
+            orderId: PX39280930012
+            name: Widget Adapter Order
+            mid: M123456789
+            orderDate: 2024-01-10T10:15:30Z
+            amount: 99.99
+            currency: USD
+            status: COMPLETED
+            cardNumber: 622222******2222
+            products:
+              - productId: 29838-02
+                count: 2
+                spec: xs-83
+                status: DELIVERED
+
+    InvalidReferenceResponse:
+      description: Invalid reference (e.g. not a valid UUID)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HttpErrorResponse'
+          example:
+            code: invalid_reference
+            detail: invalid UUID string
+
+    OrderNotFoundResponse:
+      description: Order not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HttpErrorResponse'
+          example:
+            code: order_not_found
+            detail: Order not found
 
   schemas:
 
@@ -121,8 +232,8 @@ components:
           example: "8f14e45fceea167a5a36dedd4bea2543"
         cardNumber:
           type: string
-          description: Card number
-          example: "4111111111111111"
+          description: "Card number. Current business rules: `4*` => unsupported card type, `5*` => insufficient balance, other prefixes may succeed."
+          example: "6222222222222222"
         cvv:
           type: string
           description: CVV
@@ -202,32 +313,30 @@ components:
         cardNumber:
           type: string
           description: Masked card number (first 6 and last 4 visible)
-          example: "555555******4444"
+          example: "622222******2222"
         products:
           type: array
           items:
             $ref: '#/components/schemas/ProductResponse'
 
 
-    OrderQueryErrorResponse:
+    HttpErrorResponse:
       type: object
+      description: Standard public HTTP error payload. Only generic `code + detail` is returned; internal validation details or debug information must not be exposed.
       required:
-        - status
-        - failReason
-        - reference
+        - code
+        - detail
       properties:
-        status:
+        code:
           type: string
-          enum: [FAIL]
-          example: FAIL
-        failReason:
+          description: Public machine-readable error code. Known values in this service include `order_conflict`, `invalid_request`, `invalid_reference`, and `order_not_found`.
+          example: invalid_request
+        detail:
           type: string
-          example: "Order not found"
-        reference:
-          type: string
-          description: Raw query value
+          description: Public human-readable error summary.
+          example: Request validation failed
 
-    OrderCreateErrorResponse:
+    OrderBusinessFailureResponse:
       type: object
       required:
         - status
@@ -239,7 +348,8 @@ components:
           example: FAIL
         failReason:
           type: string
-          example: "Order already exists"
+          description: Business failure reason, such as `Unsupported card type` or `Insufficient balance`.
+          example: "Unsupported card type"
         reference:
           type: string
           format: uuid
@@ -263,7 +373,7 @@ components:
             $ref: '#/components/schemas/ProductResponse'
         cardNumber:
           type: string
-          description: May be returned only for 400 invalid-card responses
+          description: May be returned only for business failure responses that still expose masked card data
 
 
     # =========================

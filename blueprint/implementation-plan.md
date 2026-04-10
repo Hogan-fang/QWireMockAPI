@@ -47,8 +47,8 @@
 > 备注：接口路径来源：`schema/order_server.yaml`
 
 #### 业务规则
-1. 卡号 **4 开头** → 返回 `400`
-2. 卡号 **5 开头** → 返回 `402`
+1. 卡号 **4 开头** → 返回 `400`，业务失败原因为 `Unsupported card type`
+2. 卡号 **5 开头** → 返回 `400`，业务失败原因为 `Insufficient balance`
 3. 创建成功时，订单状态为 `SUCCESS`，商品状态为 `PROCESSING`
 4. 失败场景统一返回 `FAIL`，并带 `failReason`
 5. 订单创建后约 `30s`，商品状态推进为 `SHIPPED`
@@ -85,7 +85,7 @@
 ## 5. Blueprint 目录要求
 
 - `schema/`：维护 `order_server.yaml` 和 `callback_server.yaml`
-- `spec/`：维护 `order-service.spec.yaml`、`callback-server.spec.yaml`、`shared-contracts.spec.yaml`
+- `spec/`：维护 `order-server.spec.yaml`、`callback-server.spec.yaml`、`shared-contracts.spec.yaml`
 - `examples/`：维护订单与回调样例
 - `structure/`：维护 Python 目标目录结构设计
 - `plan/`：维护阶段拆分、路线图和执行顺序
@@ -112,7 +112,7 @@
 
 ## 8. 同步提醒
 
-- 当前 `blueprint/schema/order_server.yaml` 尚未显式声明 `402` 响应，后续应补齐
+- `POST /order` 的业务失败分支需覆盖两类 `400`：`Unsupported card type` 与 `Insufficient balance`
 - callback 查询逻辑以本计划为准：存在返回 `200`，不存在返回 `404`
 
 > 备注：来源：工程化补充

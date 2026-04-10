@@ -17,7 +17,7 @@
 ## Phase 2：Spec Finalize
 
 - **输出文件**
-  - `../spec/order-service.spec.yaml`
+  - `../spec/order-server.spec.yaml`
   - `../spec/callback-server.spec.yaml`
   - `../spec/shared-contracts.spec.yaml`
 - **完成标准**

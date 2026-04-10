@@ -9,6 +9,7 @@ documentRole:
 sourceLegend:
   requirement: 直接来自业务需求或用户补充规则
   schema: 直接来自 blueprint/schema/order_server.yaml
+  guideline: 直接来自 QWireGuideline/guideline/project-guideline.md
   engineering: 为便于实现、测试与维护而增加的工程化设计
 
 apiContract:
@@ -27,19 +28,22 @@ apiContract:
         source: requirement
       - statusCode: 400
         when:
-          - cardNumber 以 4 开头
-          - reference 已存在
-          - 请求体基础校验失败
-        responseModel: OrderCreateErrorResponse
+          - cardNumber 以 4 开头，触发业务失败，`failReason=Unsupported card type`
+          - cardNumber 以 5 开头，触发业务失败，`failReason=Insufficient balance`
+        responseModel: OrderBusinessFailureResponse
         orderStatus: FAIL
         failReasonRequired: true
         source: requirement
-      - statusCode: 402
-        when: cardNumber 以 5 开头
-        responseModel: OrderCreateErrorResponse
-        orderStatus: FAIL
-        failReasonRequired: true
-        source: requirement
+      - statusCode: 409
+        when: reference 已存在，构成重复提交或资源冲突
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
+      - statusCode: 422
+        when: 请求体基础校验失败
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
 
   queryOrder:
     endpoint: GET /order?reference={uuid}
@@ -49,14 +53,16 @@ apiContract:
         when: reference 存在
         responseModel: OrderResponse
         source: schema
-      - statusCode: 400
+      - statusCode: 422
         when: reference 不是合法 UUID
-        responseModel: OrderQueryErrorResponse
-        source: schema
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
       - statusCode: 404
         when: reference 不存在
-        responseModel: OrderQueryErrorResponse
-        source: schema
+        responseModel: HttpErrorResponse
+        codeDetailOnly: true
+        source: guideline
 
 persistence:
   orderRecord:
@@ -75,6 +81,8 @@ dataProtection:
       source: requirement
     - rule: cvv 与 expiry 不得出现在任何订单响应或回调数据中
       source: requirement
+    - rule: HTTP 错误响应仅返回通用的 `code + detail`，不得暴露内部校验细节或调试信息
+      source: guideline
   failReason:
     - rule: 失败场景统一返回 FAIL + failReason
       source: requirement
@@ -112,27 +120,33 @@ callbackPolicy:
   source: requirement
 
 implementationNotes:
+  - note: 返回错误的结构定义、错误码清单和示例以 `blueprint/schema/order_server.yaml` 中的 `components.responses` / `components.schemas` 为准
+    source: schema
   - note: 可通过调度器或后台任务驱动 30s / 60s 状态推进
     source: engineering
   - note: 查询接口返回的数据需与持久化状态保持一致
     source: engineering
+  - note: 所有 HTTP 错误响应的 `detail` 必须使用通用可公开信息，不得暴露内部异常、校验路径或调试细节
+    source: guideline
 
 validationChecklist:
   - item: POST /order 成功返回 201 + OrderResponse
     source: schema
-  - item: 4 开头卡号返回 400 + FAIL + failReason
+  - item: 4 开头卡号返回 400 + FAIL + `failReason=Unsupported card type`
     source: requirement
-  - item: 5 开头卡号返回 402 + FAIL + failReason
+  - item: 5 开头卡号返回 400 + FAIL + `failReason=Insufficient balance`
     source: requirement
-  - item: GET /order 非法 UUID 返回 400
-    source: schema
-  - item: GET /order 不存在 reference 返回 404
-    source: schema
+  - item: reference 冲突返回 409 + HttpErrorResponse
+    source: guideline
+  - item: GET /order 非法 UUID 返回 422 + HttpErrorResponse
+    source: guideline
+  - item: GET /order 不存在 reference 返回 404 + HttpErrorResponse
+    source: guideline
   - item: 响应中 cardNumber 已掩码且无 cvv/expiry
     source: requirement
   - item: 订单状态 SUCCESS → COMPLETED，商品状态 PROCESSING → SHIPPED → DELIVERED
     source: requirement
 
 schemaSyncNotes:
-  - item: 当前 schema 文件未声明 402 响应，后续应在 OpenAPI 中补齐
+  - item: 当前 schema 中的 `400` 业务失败示例需同时覆盖 `Unsupported card type` 与 `Insufficient balance` 两种场景
     source: engineering

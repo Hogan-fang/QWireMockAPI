@@ -1,0 +1,4 @@
+{
+  "code": "order_conflict",
+  "detail": "Order already exists"
+}
