@@ -136,10 +136,19 @@ def create_order(body: OrderRequest):
     logger.info("POST /order request:\n%s", _json(body.model_dump(mode="json")))
 
     if order_db.exists(body.reference):
-        return JSONResponse(status_code=400, content={"status": "FAIL", "failReason": "Order already exists", "reference": str(body.reference), "name": body.name, "mid": body.mid})
+        return JSONResponse(
+            status_code=409,
+            content={"code": "order_conflict", "detail": "Order already exists"},
+        )
 
     if body.cardNumber.strip().startswith("4"):
         failed_order = order_db.create_order(body, status="FAIL", failReason="Unsupported card type")
+        payload = failed_order.model_dump(mode="json")
+        logger.info("POST /order response(400):\n%s", _json(payload))
+        return JSONResponse(status_code=400, content=payload)
+
+    if body.cardNumber.strip().startswith("5"):
+        failed_order = order_db.create_order(body, status="FAIL", failReason="Insufficient balance")
         payload = failed_order.model_dump(mode="json")
         logger.info("POST /order response(400):\n%s", _json(payload))
         return JSONResponse(status_code=400, content=payload)
@@ -163,14 +172,14 @@ def get_order(reference: str = Query(..., description="Order reference (UUID)"))
     except ValueError:
         return JSONResponse(
             status_code=422,
-            content={"code": "invalid_reference", "detail": "invalid UUID string", "reference": reference},
+            content={"code": "invalid_reference", "detail": "invalid UUID string"},
         )
 
     order = order_db.get_order(reference_uuid)
     if order is None:
         return JSONResponse(
             status_code=404,
-            content={"code": "order_not_found", "detail": "Order not found", "reference": reference},
+            content={"code": "order_not_found", "detail": "Order not found"},
         )
 
     payload = order.model_dump(mode="json")

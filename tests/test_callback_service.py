@@ -18,7 +18,7 @@ def _callback_payload(reference: str) -> dict:
         "amount": 99.99,
         "currency": "USD",
         "status": "SUCCESS",
-        "cardNumber": "555555******4444",
+        "cardNumber": "622222******2222",
         "products": [{"productId": "P1", "count": 1, "spec": "S", "status": "PROCESSING"}],
     }
 
@@ -57,4 +57,4 @@ def test_v2_callback_invalid_payload_returns_400(record_order_keyword):
     body = response.json()
     assert body["code"] == "invalid_request"
     assert body["detail"] == "Invalid order payload"
-    assert "errors" in body
+    assert "errors" not in body

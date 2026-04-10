@@ -60,7 +60,6 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
         content={
             "code": "invalid_request",
             "detail": "Invalid order payload",
-            "errors": exc.errors(),
         },
     )
 

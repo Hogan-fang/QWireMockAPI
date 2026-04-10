@@ -76,9 +76,9 @@ def init_db() -> None:
                     status VARCHAR(32) NOT NULL,
                     card_number VARCHAR(64) NOT NULL,
                     fail_reason VARCHAR(255) DEFAULT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    callback_url VARCHAR(512) NOT NULL,
-                    )
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    callback_url VARCHAR(512) NOT NULL
+                )
                 """
             )
             cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'mid'")

@@ -21,7 +21,7 @@ def integration_order_client():
 
 
 @pytest.mark.v2_integration
-@pytest.mark.case(point="Integration: POST /order persists successfully into orders/order_products")
+@pytest.mark.case(point="Integration: POST /order persists successfully into `order` / `order_product`")
 def test_v2_integration_create_order_persists_db(integration_order_client: TestClient, record_order_keyword):
     _maybe_clear_orders()
 
@@ -34,7 +34,7 @@ def test_v2_integration_create_order_persists_db(integration_order_client: TestC
         "callback": "http://127.0.0.1:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 1200.0,
@@ -80,6 +80,35 @@ def test_v2_integration_invalid_card_persists_fail_order(integration_order_clien
 
 
 @pytest.mark.v2_integration
+@pytest.mark.case(point="Integration: card number starting with 5 returns 400 and persists insufficient-balance failure")
+def test_v2_integration_insufficient_balance_persists_fail_order(integration_order_client: TestClient, record_order_keyword):
+    _maybe_clear_orders()
+
+    ref = str(uuid4())
+    record_order_keyword(ref)
+
+    payload = {
+        "reference": ref,
+        "name": "Integration Insufficient Balance",
+        "callback": "http://127.0.0.1:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
+        "cardNumber": "5222222222222222",
+        "cvv": "123",
+        "expiry": "12/28",
+        "amount": 20.0,
+        "currency": "USD",
+        "products": [{"productId": "DB-I-BALANCE", "count": 1, "spec": "S"}],
+    }
+
+    response = integration_order_client.post("/order", json=payload)
+    assert response.status_code == 400
+    fail_body = response.json()
+    assert fail_body["status"] == "FAIL"
+    assert fail_body["failReason"] == "Insufficient balance"
+
+
+@pytest.mark.v2_integration
 @pytest.mark.case(point="Integration: GET /order reads and returns data from database")
 def test_v2_integration_get_order_reads_from_db(integration_order_client: TestClient, record_order_keyword):
     _maybe_clear_orders()
@@ -93,7 +122,7 @@ def test_v2_integration_get_order_reads_from_db(integration_order_client: TestCl
         "callback": "http://127.0.0.1:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 88.8,
@@ -113,7 +142,7 @@ def test_v2_integration_get_order_reads_from_db(integration_order_client: TestCl
 
 
 @pytest.mark.v2_integration
-@pytest.mark.case(point="Integration: duplicate reference second submit returns 400 and keeps only one record")
+@pytest.mark.case(point="Integration: duplicate reference second submit returns 409 and keeps only one record")
 def test_v2_integration_duplicate_reference_conflict(integration_order_client: TestClient, record_order_keyword):
     _maybe_clear_orders()
 
@@ -125,7 +154,7 @@ def test_v2_integration_duplicate_reference_conflict(integration_order_client: T
         "callback": "http://127.0.0.1:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 66.0,
@@ -137,8 +166,9 @@ def test_v2_integration_duplicate_reference_conflict(integration_order_client: T
     second = integration_order_client.post("/order", json=payload)
 
     assert first.status_code == 201
-    assert second.status_code == 400
-    assert second.json()["failReason"] == "Order already exists"
+    assert second.status_code == 409
+    assert second.json()["code"] == "order_conflict"
+    assert second.json()["detail"] == "Order already exists"
 
 
 @pytest.mark.v2_integration
@@ -157,7 +187,7 @@ def test_v2_integration_product_status_transition_30s_60s(
         "callback": "http://127.0.0.1:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 88.0,
@@ -178,7 +208,7 @@ def test_v2_integration_product_status_transition_30s_60s(
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE orders SET created_at = NOW() - INTERVAL 31 SECOND WHERE reference = %s",
+                "UPDATE `order` SET created_at = NOW() - INTERVAL 31 SECOND WHERE reference = %s",
                 (ref,),
             )
         conn.commit()
@@ -197,7 +227,7 @@ def test_v2_integration_product_status_transition_30s_60s(
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE orders SET created_at = NOW() - INTERVAL 61 SECOND WHERE reference = %s",
+                "UPDATE `order` SET created_at = NOW() - INTERVAL 61 SECOND WHERE reference = %s",
                 (ref,),
             )
         conn.commit()
@@ -229,7 +259,7 @@ def test_v2_integration_order_completed_only_when_all_products_delivered(
         "callback": "http://127.0.0.1:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 77.0,
@@ -247,7 +277,7 @@ def test_v2_integration_order_completed_only_when_all_products_delivered(
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE orders SET created_at = NOW() - INTERVAL 31 SECOND WHERE reference = %s",
+                "UPDATE `order` SET created_at = NOW() - INTERVAL 31 SECOND WHERE reference = %s",
                 (ref,),
             )
         conn.commit()
@@ -261,8 +291,8 @@ def test_v2_integration_order_completed_only_when_all_products_delivered(
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                UPDATE order_products p
-                JOIN orders o ON p.order_id = o.id
+                UPDATE order_product p
+                JOIN `order` o ON p.order_id = o.id
                 SET p.status = 'DELIVERED'
                 WHERE o.reference = %s AND p.product_id = %s
                 """,
@@ -286,7 +316,7 @@ def test_v2_integration_order_completed_only_when_all_products_delivered(
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE orders SET created_at = NOW() - INTERVAL 61 SECOND WHERE reference = %s",
+                "UPDATE `order` SET created_at = NOW() - INTERVAL 61 SECOND WHERE reference = %s",
                 (ref,),
             )
         conn.commit()

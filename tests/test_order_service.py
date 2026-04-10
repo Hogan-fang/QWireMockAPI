@@ -27,7 +27,7 @@ def _build_order_response(reference: str, status: str = "SUCCESS", failReason: s
         amount=99.99,
         currency="USD",
         status=status,
-        cardNumber="555555******4444",
+        cardNumber="622222******2222",
         products=[ProductResponse(productId="29838-02", count=2, spec="xs-83", status="FAIL" if status == "FAIL" else "PROCESSING")],
         failReason=failReason,
     )
@@ -62,7 +62,7 @@ def test_v2_create_order_success_returns_201_and_masked_card(
         "callback": "http://localhost:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 99.99,
@@ -76,15 +76,15 @@ def test_v2_create_order_success_returns_201_and_masked_card(
 
     assert body["status"] == "SUCCESS"
     assert body["reference"] == ref
-    assert body["cardNumber"] == "555555******4444"
+    assert body["cardNumber"] == "622222******2222"
     assert "cvv" not in body
     assert "expiry" not in body
     assert "failReason" not in body
     assert callback_events == [(ref, "ORDER_SUCCESS")]
 
 
-@pytest.mark.case(point="POST /order duplicate reference returns 400 with Order already exists")
-def test_v2_create_order_conflict_returns_400(
+@pytest.mark.case(point="POST /order duplicate reference returns 409 with unified HTTP error payload")
+def test_v2_create_order_conflict_returns_409(
     order_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     record_order_keyword,
@@ -108,13 +108,12 @@ def test_v2_create_order_conflict_returns_400(
     }
 
     response = order_client.post("/order", json=payload)
-    assert response.status_code == 400
+    assert response.status_code == 409
     body = response.json()
-    assert body["status"] == "FAIL"
-    assert body["failReason"] == "Order already exists"
-    assert body["reference"] == ref
-    assert body["name"] == "Duplicate Order"
-    assert body["mid"] == "M123456789"
+    assert body["code"] == "order_conflict"
+    assert body["detail"] == "Order already exists"
+    assert "status" not in body
+    assert "failReason" not in body
 
 
 @pytest.mark.case(point="POST /order card number starting with 4 returns 400 and FAIL")
@@ -153,6 +152,44 @@ def test_v2_create_order_invalid_card_returns_400(
     body = response.json()
     assert body["status"] == "FAIL"
     assert body["failReason"] == "Unsupported card type"
+
+
+@pytest.mark.case(point="POST /order card number starting with 5 returns 400 and FAIL with insufficient balance")
+def test_v2_create_order_insufficient_balance_returns_400(
+    order_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    record_order_keyword,
+):
+    monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: False)
+    monkeypatch.setattr(
+        order_service.order_db,
+        "create_order",
+        lambda request, status, failReason=None: _build_order_response(
+            str(request.reference), status="FAIL", failReason="Insufficient balance"
+        ),
+    )
+
+    ref = str(uuid4())
+    record_order_keyword(ref)
+    payload = {
+        "reference": ref,
+        "name": "Insufficient Balance Order",
+        "callback": "http://localhost:8100/callback",
+        "mid": "M123456789",
+        "signature": "8f14e45fceea167a5a36dedd4bea2543",
+        "cardNumber": "5222222222222222",
+        "cvv": "123",
+        "expiry": "12/28",
+        "amount": 99.99,
+        "currency": "USD",
+        "products": [{"productId": "P2", "count": 1, "spec": "M"}],
+    }
+
+    response = order_client.post("/order", json=payload)
+    assert response.status_code == 400
+    body = response.json()
+    assert body["status"] == "FAIL"
+    assert body["failReason"] == "Insufficient balance"
 
 
 @pytest.mark.case(point="POST /order invalid UUID in request body returns 422 from framework validation")
@@ -202,7 +239,7 @@ def test_v2_get_order_not_found_returns_404(
     body = response.json()
     assert body["code"] == "order_not_found"
     assert body["detail"] == "Order not found"
-    assert body["reference"] == ref
+    assert "reference" not in body
 
 
 @pytest.mark.case(point="GET /order successful query returns 200")
@@ -245,7 +282,7 @@ def test_v2_create_then_get_order_flow(
         "callback": "http://localhost:8100/callback",
         "mid": "M123456789",
         "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "cardNumber": "6222222222222222",
         "cvv": "123",
         "expiry": "12/28",
         "amount": 31.2,

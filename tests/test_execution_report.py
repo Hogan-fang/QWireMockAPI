@@ -22,7 +22,7 @@ def test_generate_v2_execution_report(record_order_keyword):
         "amount": 88.88,
         "currency": "USD",
         "status": "SUCCESS",
-        "cardNumber": "555555******4444",
+        "cardNumber": "622222******2222",
         "products": [{"productId": "REPORT-01", "count": 1, "spec": "M", "status": "PROCESSING"}],
     }
 
