@@ -127,7 +127,7 @@ def test_v2_create_order_invalid_card_returns_400(
         order_service.order_db,
         "create_order",
         lambda request, status, failReason=None: _build_order_response(
-            str(request.reference), status="FAIL", failReason="Unsupported card type"
+            str(request.reference), status="FAIL", failReason="Card invalid"
         ),
     )
 
@@ -151,7 +151,7 @@ def test_v2_create_order_invalid_card_returns_400(
     assert response.status_code == 400
     body = response.json()
     assert body["status"] == "FAIL"
-    assert body["failReason"] == "Unsupported card type"
+    assert body["failReason"] == "Card invalid"
 
 
 @pytest.mark.case(point="POST /order card number starting with 5 returns 400 and FAIL with insufficient balance")
@@ -212,7 +212,9 @@ def test_v2_create_order_invalid_uuid_returns_422(order_client: TestClient, reco
 
     response = order_client.post("/order", json=payload)
     assert response.status_code == 422
-    assert "detail" in response.json()
+    body = response.json()
+    assert body["code"] == "invalid_request"
+    assert body["detail"] == "Request validation failed"
 
 
 @pytest.mark.case(point="GET /order invalid UUID returns 422 with unified HTTP error payload")

@@ -1,152 +1,117 @@
-specVersion: "2.0"
-service: order_server
-status: ready
+specVersion: "2.0"  # 来源：元信息
+service: order_server  # 来源：元信息
+status: ready  # 来源：元信息
 
-documentRole:
-  value: order_server 行为规格，供 schema、实现代码和测试样例生成使用
-  source: requirement
+documentRole:  # 来源：需求
+  value: order_server 行为规格，供 schema、实现代码和测试样例生成使用  # 来源：需求
 
-sourceLegend:
-  requirement: 直接来自业务需求或用户补充规则
-  schema: 直接来自 blueprint/schema/order_server.yaml
-  guideline: 直接来自 QWireGuideline/guideline/project-guideline.md
-  engineering: 为便于实现、测试与维护而增加的工程化设计
+sourceLegend:  # 来源：元信息
+  requirement: 直接来自业务需求或用户补充规则  # 来源：元信息
+  schema: 直接来自 blueprint/schema/order_server.yaml  # 来源：元信息
+  guideline: 直接来自 QWireGuideline/guideline/project-guideline.md  # 来源：元信息
+  engineering: 为便于实现、测试与维护而增加的工程化设计  # 来源：元信息
 
-apiContract:
-  createOrder:
-    endpoint: POST /order
-    source: schema
-    requestModel:
-      value: OrderRequest
-      source: schema
-    responses:
-      - statusCode: 201
-        when: 请求合法且支付成功
-        responseModel: OrderResponse
-        orderStatus: SUCCESS
-        productStatus: PROCESSING
-        source: requirement
-      - statusCode: 400
-        when:
-          - cardNumber 以 4 开头，触发业务失败，`failReason=Unsupported card type`
-          - cardNumber 以 5 开头，触发业务失败，`failReason=Insufficient balance`
-        responseModel: OrderBusinessFailureResponse
-        orderStatus: FAIL
-        failReasonRequired: true
-        source: requirement
-      - statusCode: 409
-        when: reference 已存在，构成重复提交或资源冲突
-        responseModel: HttpErrorResponse
-        codeDetailOnly: true
-        source: guideline
-      - statusCode: 422
-        when: 请求体基础校验失败
-        responseModel: HttpErrorResponse
-        codeDetailOnly: true
-        source: guideline
 
-  queryOrder:
-    endpoint: GET /order?reference={uuid}
-    source: schema
-    responses:
-      - statusCode: 200
-        when: reference 存在
-        responseModel: OrderResponse
-        source: schema
-      - statusCode: 422
-        when: reference 不是合法 UUID
-        responseModel: HttpErrorResponse
-        codeDetailOnly: true
-        source: guideline
-      - statusCode: 404
-        when: reference 不存在
-        responseModel: HttpErrorResponse
-        codeDetailOnly: true
-        source: guideline
+apiContract:  # 来源：schema
+  createOrder:  # 来源：schema
+    endpoint: POST /order  # 来源：schema
+    requestModel:  # 来源：schema
+      value: OrderRequest  # 来源：schema
+    responses:  # 来源：schema
+      - statusCode: 201  # 来源：需求
+        when: 请求合法且支付成功  # 来源：需求
+        responseModel: OrderResponse  # 来源：需求
+        orderStatus: SUCCESS  # 来源：需求
+        productStatus: PROCESSING  # 来源：需求
+      - statusCode: 400  # 来源：需求
+        when:  # 来源：需求
+          - cardNumber 以 4 开头，触发业务失败，`failReason=Card invalid`  # 来源：需求
+          - cardNumber 以 5 开头，触发业务失败，`failReason=Insufficient balance`  # 来源：需求
+        responseModel: OrderBusinessFailureResponse  # 来源：需求
+        orderStatus: FAIL  # 来源：需求
+        failReasonRequired: true  # 来源：需求
+      - statusCode: 409  # 来源：guideline
+        when: reference 已存在，构成重复提交或资源冲突  # 来源：guideline
+        responseModel: HttpErrorResponse  # 来源：guideline
+        codeDetailOnly: true  # 来源：guideline
+      - statusCode: 422  # 来源：guideline
+        when: 请求体基础校验失败  # 来源：guideline
+        responseModel: HttpErrorResponse  # 来源：guideline
+        codeDetailOnly: true  # 来源：guideline
 
-persistence:
-  orderRecord:
-    value: 订单主数据必须持久化到 DB
-    source: requirement
-  productRecord:
-    value: 商品明细必须持久化到 DB
-    source: requirement
-  storageBackend:
-    value: DB 类型由实现决定，当前默认按关系型数据库设计
-    source: engineering
+  queryOrder:  # 来源：schema
+    endpoint: GET /order?reference={uuid}  # 来源：schema
+    responses:  # 来源：schema
+      - statusCode: 200  # 来源：schema
+        when: reference 存在  # 来源：schema
+        responseModel: OrderResponse  # 来源：schema
+      - statusCode: 422  # 来源：guideline
+        when: reference 不是合法 UUID  # 来源：guideline
+        responseModel: HttpErrorResponse  # 来源：guideline
+        codeDetailOnly: true  # 来源：guideline
+      - statusCode: 404  # 来源：guideline
+        when: reference 不存在  # 来源：guideline
+        responseModel: HttpErrorResponse  # 来源：guideline
+        codeDetailOnly: true  # 来源：guideline
 
-dataProtection:
-  masking:
-    - rule: cardNumber 在响应中必须显示为前 6 后 4
-      source: requirement
-    - rule: cvv 与 expiry 不得出现在任何订单响应或回调数据中
-      source: requirement
-    - rule: HTTP 错误响应仅返回通用的 `code + detail`，不得暴露内部校验细节或调试信息
-      source: guideline
-  failReason:
-    - rule: 失败场景统一返回 FAIL + failReason
-      source: requirement
-    - rule: 成功场景不返回 failReason
-      source: engineering
+persistence:  # 来源：需求
+  orderRecord:  # 来源：需求
+    value: 订单主数据必须持久化到 DB  # 来源：需求
+  productRecord:  # 来源：需求
+    value: 商品明细必须持久化到 DB  # 来源：需求
+  storageBackend:  # 来源：需求
+    value: DB 类型由实现决定，当前默认按关系型数据库设计  # 来源：需求
 
-statusFlow:
-  - stage: create_success
-    orderStatus: SUCCESS
-    productStatus: PROCESSING
-    callbackEvent: ORDER_SUCCESS
-    trigger: 订单创建成功后立即触发
-    source: requirement
-  - stage: shipping_progress
-    orderStatus: SUCCESS
-    productStatus: SHIPPED
-    callbackEvent: ORDER_SHIPPED
-    trigger: 订单创建后约 30 秒
-    source: requirement
-  - stage: delivery_progress
-    orderStatus: SUCCESS
-    productStatus: DELIVERED
-    callbackEvent: ORDER_DELIVERED
-    trigger: 订单创建后约 60 秒
-    source: requirement
-  - stage: order_complete
-    orderStatus: COMPLETED
-    productStatus: DELIVERED
-    callbackEvent: ORDER_COMPLETED
-    trigger: 全部商品均为 DELIVERED 后
-    source: requirement
+dataProtection:  # 来源：需求
+  masking:  # 来源：需求
+    - rule: cardNumber 在响应中必须显示为前 6 后 4  # 来源：需求
+    - rule: cvv 与 expiry 不得出现在任何订单响应或回调数据中  # 来源：需求
+    - rule: HTTP 错误响应仅返回通用的 `code + detail`，不得暴露内部校验细节或调试信息  # 来源：guideline
+  failReason:  # 来源：需求
+    - rule: 失败场景统一返回 FAIL + failReason  # 来源：需求
+    - rule: 成功场景不返回 failReason  # 来源：工程补充
 
-callbackPolicy:
-  value: order_server 在创建成功和关键状态变更时必须触发 ORDER_* 回调
-  source: requirement
+statusFlow:  # 来源：需求
+  - stage: create_success  # 来源：需求
+    orderStatus: SUCCESS  # 来源：需求
+    productStatus: PROCESSING  # 来源：需求
+    callbackEvent: ORDER_SUCCESS  # 来源：需求
+    trigger: 订单创建成功后立即触发  # 来源：需求
+  - stage: shipping_progress  # 来源：需求
+    orderStatus: SUCCESS  # 来源：需求
+    productStatus: SHIPPED  # 来源：需求
+    callbackEvent: ORDER_SHIPPED  # 来源：需求
+    trigger: 订单创建后约 30 秒  # 来源：需求
+  - stage: delivery_progress  # 来源：需求
+    orderStatus: SUCCESS  # 来源：需求
+    productStatus: DELIVERED  # 来源：需求
+    callbackEvent: ORDER_DELIVERED  # 来源：需求
+    trigger: 订单创建后约 60 秒  # 来源：需求
+  - stage: order_complete  # 来源：需求
+    orderStatus: COMPLETED  # 来源：需求
+    productStatus: DELIVERED  # 来源：需求
+    callbackEvent: ORDER_COMPLETED  # 来源：需求
+    trigger: 全部商品均为 DELIVERED 后  # 来源：需求
 
-implementationNotes:
-  - note: 返回错误的结构定义、错误码清单和示例以 `blueprint/schema/order_server.yaml` 中的 `components.responses` / `components.schemas` 为准
-    source: schema
-  - note: 可通过调度器或后台任务驱动 30s / 60s 状态推进
-    source: engineering
-  - note: 查询接口返回的数据需与持久化状态保持一致
-    source: engineering
-  - note: 所有 HTTP 错误响应的 `detail` 必须使用通用可公开信息，不得暴露内部异常、校验路径或调试细节
-    source: guideline
+callbackPolicy:  # 来源：需求
+  value: order_server 在创建成功和关键状态变更时必须触发 ORDER_* 回调  # 来源：需求
 
-validationChecklist:
-  - item: POST /order 成功返回 201 + OrderResponse
-    source: schema
-  - item: 4 开头卡号返回 400 + FAIL + `failReason=Unsupported card type`
-    source: requirement
-  - item: 5 开头卡号返回 400 + FAIL + `failReason=Insufficient balance`
-    source: requirement
-  - item: reference 冲突返回 409 + HttpErrorResponse
-    source: guideline
-  - item: GET /order 非法 UUID 返回 422 + HttpErrorResponse
-    source: guideline
-  - item: GET /order 不存在 reference 返回 404 + HttpErrorResponse
-    source: guideline
-  - item: 响应中 cardNumber 已掩码且无 cvv/expiry
-    source: requirement
-  - item: 订单状态 SUCCESS → COMPLETED，商品状态 PROCESSING → SHIPPED → DELIVERED
-    source: requirement
+implementationNotes:  # 来源：工程补充
+  - note: 返回错误的结构定义、错误码清单和示例以 `blueprint/schema/order_server.yaml` 中的 `components.responses` / `components.schemas` 为准  # 来源：schema
+  - note: 可通过调度器或后台任务驱动 30s / 60s 状态推进  # 来源：工程补充
+  - note: 查询接口返回的数据需与持久化状态保持一致  # 来源：工程补充
+  - note: 所有 HTTP 错误响应的 `detail` 必须使用通用可公开信息，不得暴露内部异常、校验路径或调试细节  # 来源：guideline
 
-schemaSyncNotes:
-  - item: 当前 schema 中的 `400` 业务失败示例需同时覆盖 `Unsupported card type` 与 `Insufficient balance` 两种场景
-    source: engineering
+validationChecklist:  # 来源：需求
+  - item: POST /order 成功返回 201 + OrderResponse  # 来源：schema
+  - item: 4 开头卡号返回 400 + FAIL + `failReason=Card invalid`  # 来源：需求
+  - item: 5 开头卡号返回 400 + FAIL + `failReason=Insufficient balance`  # 来源：需求
+  - item: reference 冲突返回 409 + HttpErrorResponse  # 来源：guideline
+  - item: GET /order 非法 UUID 返回 422 + HttpErrorResponse  # 来源：guideline
+  - item: GET /order 不存在 reference 返回 404 + HttpErrorResponse  # 来源：guideline
+  - item: 响应中 cardNumber 已掩码且无 cvv/expiry  # 来源：需求
+  - item: 订单状态 SUCCESS → COMPLETED，商品状态 PROCESSING → SHIPPED → DELIVERED  # 来源：需求
+
+schemaSyncNotes:  # 来源：工程补充
+  - item: 卡号前缀业务规则（4* / 5*）及对应 failReason 值已从 schema 移至本 spec 管理  # 来源：工程补充
+  - item: failReason 词典：`Card invalid`（4* 卡）、`Insufficient balance`（5* 卡）  # 来源：需求

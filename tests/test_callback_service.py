@@ -36,13 +36,13 @@ def test_v2_callback_receive_returns_ok(record_order_keyword):
     assert response1.json() == {"message": "OK"}
 
 
-@pytest.mark.case(point="GET /check returns 404 because callbacks are log-only")
+@pytest.mark.case(point="GET /check returns 404 when reference has no stored callback")
 def test_v2_check_not_found_returns_404(record_order_keyword):
     ref = str(uuid4())
     record_order_keyword(ref)
     response = client.get("/check", params={"reference": ref})
     assert response.status_code == 404
-    assert "log-only" in response.json()["detail"]
+    assert response.json()["code"] == "callback_not_found"
 
 
 @pytest.mark.case(point="POST /callback invalid payload returns 400 with unified HTTP error details")
@@ -58,3 +58,30 @@ def test_v2_callback_invalid_payload_returns_400(record_order_keyword):
     assert body["code"] == "invalid_request"
     assert body["detail"] == "Invalid order payload"
     assert "errors" not in body
+
+
+@pytest.mark.case(point="GET /check invalid UUID returns 422 with unified HTTP error payload")
+def test_v2_check_invalid_uuid_returns_422(record_order_keyword):
+    record_order_keyword("not-a-uuid")
+    response = client.get("/check", params={"reference": "not-a-uuid"})
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "invalid_reference"
+    assert body["detail"] == "Invalid UUID format"
+
+
+@pytest.mark.case(point="GET /check returns 200 with stored OrderResponse after POST /callback")
+def test_v2_check_found_returns_200(record_order_keyword):
+    ref = str(uuid4())
+    record_order_keyword(ref)
+
+    post_response = client.post("/callback", json=_callback_payload(ref))
+    assert post_response.status_code == 200
+
+    get_response = client.get("/check", params={"reference": ref})
+    assert get_response.status_code == 200
+    body = get_response.json()
+    assert body["reference"] == ref
+    assert body["status"] == "SUCCESS"
+    assert "cvv" not in body
+    assert "expiry" not in body

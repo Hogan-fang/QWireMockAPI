@@ -32,4 +32,8 @@ def test_generate_v2_execution_report(record_order_keyword):
     check_resp = client.get("/check", params={"reference": reference})
 
     assert post_resp.status_code == 200
-    assert check_resp.status_code == 404
+    assert check_resp.status_code == 200
+    body = check_resp.json()
+    assert body["reference"] == reference
+    assert body["orderId"] == "PX9001"
+    assert body["status"] == "SUCCESS"

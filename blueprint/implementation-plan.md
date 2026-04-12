@@ -1,119 +1,143 @@
-# QwireMockAPI Master Blueprint Plan
+# QWireMockAPI Implementation Plan
 
-> **备注：文档定位**
-> 本文作为后续 `schema`、`spec`、实现代码和测试样例生成的总纲文档，用于统一范围、接口行为、目录结构和交付顺序。
->
-> **备注：来源说明**
-> - **来源：需求**：直接来自用户目标、功能要求和补充规则
-> - **来源：schema**：直接来自 `blueprint/schema/*.yaml`
-> - **来源：工程化补充**：为便于实现、测试、运行和维护而增加的设计约束
+## 1. 文档定位与模式
 
-## 1. 项目概述
+- 当前为需求模式文档，用于将 requirement 转化为可执行实现计划，并做 schema 一致性检查。
+- 本文不涉及生产代码与测试代码修改，仅约束后续 spec、实现和验证路径。
 
-- **项目名称**：`QwireMockAPI`
-- **开发语言**：`Python`
-- **项目目标**：构建一个最简化 API 服务，模拟线上购物订单支付、状态推进、回调通知和查询，用于在自动化测试框架完成后验证该框架对 API 测试能力的支撑效果。
+## 2. 输入基线
 
-> 备注：本节来源：需求
+- Requirement 基线：`blueprint/requirement/requirement.md`
+- Guideline 基线：
+	- `QWireGuideline/guideline/project-guideline.md`
+	- `QWireGuideline/guideline/methodology.md`
+	- `QWireGuideline/guideline/AI-guideline.md`
+- Schema 基线：
+	- `blueprint/schema/order_server.yaml`
+	- `blueprint/schema/callback_server.yaml`
 
-## 2. 服务范围
+## 3. 目标与范围
 
-### 2.1 支持的服务端
-- `order_server`
-- `callback_server`
+### 3.1 目标
+- 建立可追溯的实现计划，覆盖 Order Server 与 Callback Server。
+- 明确接口行为、数据安全要求、状态流转与回调规则。
+- 在实现前完成 schema 满足度检查并记录差距。
 
-> 备注：来源：需求
+### 3.2 范围内
+- Order 创建与查询能力。
+- 卡号规则导致的业务失败分支。
+- 订单状态推进（PROCESSING -> SHIPPED -> DELIVERED -> COMPLETED）。
+- 状态变化触发回调。
+- Callback 接收与查询能力。
+- 数据安全与脱敏约束（卡号掩码、不返回 CVV/expiry）。
 
-### 2.2 范围内
-- `order_server` 的订单创建与查询接口
-- 支付结果判定、订单状态推进和 `ORDER_*` 回调
-- `callback_server` 的回调接收与查询接口
-- 基于 Python 的后续实现、测试样例和示例数据生成依据
+### 3.3 范围外
+- 真实支付网关、鉴权、风控。
+- 分布式与高可用架构。
 
-> 备注：来源：需求
+## 4. 需求映射
 
-### 2.3 范围外
-- 真实支付网关、鉴权、风控与外部三方集成
-- 分布式部署、消息队列、缓存集群和高可用架构
+### 4.1 Order 接口
+- 输入：商户代码、订单参考号、金额币种、商品清单。
+- 处理订单（成功或业务失败）都需持久化并返回主要请求信息 + 服务端订单号 + 处理结果。
+- 同商户下 reference 唯一，不满足时拒绝处理。
+- 无法处理的请求不落库，返回 HTTP 错误结构（code + detail）。
 
-> 备注：来源：工程化补充
+### 4.2 Query 接口
+- 通过商户订单参考号查询。
+- 业务规则：
+	- 卡号 4 开头 -> 400，卡片无效。
+	- 卡号 5 开头 -> 400，余额不足。
+	- 成功：订单 SUCCESS、商品 PROCESSING。
+	- 失败：订单 FAIL + failReason。
+	- 成功时不返回空错误信息字段。
+- 状态推进：30s -> SHIPPED，60s -> DELIVERED，全部 DELIVERED -> COMPLETED。
+- 状态变化触发回调。
+- DB 存储与对外返回均需掩码卡号，不得含 CVV/expiry。
 
-## 3. 接口基线与核心规则
+### 4.3 Callback Server
+- POST：校验通过写入内存并返回 200，否则 400。
+- GET：UUID 错误 422，不存在 404，存在 200 且数据符合 OrderResponse。
+- 仅内存存储 + 日志。
 
-### 3.1 `order_server`
-- `POST /order`：创建订单并触发支付判定
-- `GET /order?reference={uuid}`：按 `reference` 查询订单
+## 5. 技术约束（来自 Guideline）
 
-> 备注：接口路径来源：`schema/order_server.yaml`
+- 接口字段命名使用 camelCase；状态枚举使用全大写。
+- HTTP/框架错误统一返回结构：
+	- `{ "code": "error_code", "detail": "error description" }`
+- 业务失败优先用业务结构表达（status=FAIL + failReason），与 HTTP 错误结构严格区分。
+- 所有接口数据必须符合 OpenAPI Schema。
+- 时间字段使用 ISO 8601 + UTC。
 
-#### 业务规则
-1. 卡号 **4 开头** → 返回 `400`，业务失败原因为 `Unsupported card type`
-2. 卡号 **5 开头** → 返回 `400`，业务失败原因为 `Insufficient balance`
-3. 创建成功时，订单状态为 `SUCCESS`，商品状态为 `PROCESSING`
-4. 失败场景统一返回 `FAIL`，并带 `failReason`
-5. 订单创建后约 `30s`，商品状态推进为 `SHIPPED`
-6. 订单创建后约 `60s`，商品状态推进为 `DELIVERED`
-7. 全部商品均为 `DELIVERED` 后，订单状态推进为 `COMPLETED`
-8. 订单创建成功及关键状态变化时都要触发 `ORDER_*` 回调
+## 6. 分阶段实施计划
 
-> 备注：业务规则来源：需求；响应结构基线来源：schema
+### 阶段 A：契约固化
+- 产出：order/callback schema 的修订版与差距关闭记录。
+- 完成条件：关键差距项全部关闭，字段命名与错误结构与 guideline 一致。
 
-### 3.2 `callback_server`
-- `POST /callback`：校验回调请求，合法则写入内存并返回 `200`，否则返回 `400`
-- `GET /check?reference={uuid}`：查询已缓存的 callback 数据
+### 阶段 B：行为规范（Spec）
+- 产出：
+	- `blueprint/spec/order-server.spec.yaml`
+	- `blueprint/spec/callback-server.spec.yaml`
+	- `blueprint/spec/shared-contracts.spec.yaml`
+- 完成条件：状态机、回调时机、错误分层（业务失败 vs HTTP 错误）全部可验证。
+- 状态：✓ 已完成
 
-> 备注：接口路径来源：`schema/callback_server.yaml`；查询语义来源：需求
+### 阶段 C：实现落地
+- 产出：
+	- order/callback 服务实现
+	- 持久化模型与转换层（camelCase <-> snake_case）
+- 完成条件：接口、落库、脱敏、回调逻辑全部按 spec 达成。
+- 状态：✓ 已完成
 
-#### 业务规则
-1. `reference` 非法 UUID 时返回 `422`
-2. `reference` 存在时返回 `200 + OrderResponse`
-3. `reference` 不存在时返回 `404`
-4. callback 数据结构必须符合 `OrderResponse`
-5. callback 数据仅使用**内存存储 + 日志输出**
+### 阶段 D：验证与回归
+- 产出：测试用例、样例数据、验证报告。
+- 完成条件：
+	- 关键路径与异常路径通过。
+	- 回调与查询的 200/400/404/422 行为符合预期。
+- 状态：✓ 已完成
+- 验证摘要：
+	- 修正 `test_v2_create_order_invalid_card_returns_400` 中过时的 `failReason="Unsupported card type"` → `"Card invalid"`（mock 与断言同步修正）。
+	- 新增 `test_v2_check_invalid_uuid_returns_422`：GET /check 非法 UUID 返回 422 + HttpErrorResponse。
+	- 新增 `test_v2_check_found_returns_200`：POST /callback 写入后 GET /check 返回 200 + OrderResponse。
+	- 全部 16 项测试通过（order service 11 + callback service 5）。
 
-> 备注：来源：需求
+## 7. Schema 满足度检查结果
 
-## 4. 数据与安全约束
+结论：全部差距项已关闭，schema 契约已固化，可进入阶段 B（Spec 生成）。
 
-- 订单主数据与商品明细必须做 **DB 持久化**
-- callback 数据不做 DB 持久化，仅保存在**内存与日志**中
-- `cardNumber` 必须掩码为**前 6 后 4**
-- 任意响应与回调中不得暴露 `cvv` 与 `expiry`
+### 7.1 已满足项
+- 已定义 Order 的 POST/GET 与 Callback 的 POST/GET 基础接口。
+- 已覆盖 Callback 查询状态码 422/404/200。
+- 已定义统一 HTTP 错误结构（code + detail）。
+- OrderResponse 与 Callback 的 OrderResponse 均未包含 CVV/expiry 字段。
+- 状态枚举使用大写，字段命名符合 camelCase。
 
-> 备注：来源：需求；字段模型基线来源：schema
+### 7.2 差距项（已全部关闭）
 
-## 5. Blueprint 目录要求
+1. ~~掩码格式约束缺失~~ ✓ 已关闭
+- 关闭方式：在 `order_server.yaml` 的 `OrderResponse.cardNumber`、`OrderBusinessFailureResponse.cardNumber`，以及 `callback_server.yaml` 的 `OrderResponse.cardNumber` 统一加入 `pattern: '^\d{6}\*{6}\d{4}$'`。
 
-- `schema/`：维护 `order_server.yaml` 和 `callback_server.yaml`
-- `spec/`：维护 `order-server.spec.yaml`、`callback-server.spec.yaml`、`shared-contracts.spec.yaml`
-- `examples/`：维护订单与回调样例
-- `structure/`：维护 Python 目标目录结构设计
-- `plan/`：维护阶段拆分、路线图和执行顺序
+2. ~~failReason 约束不够严格~~ ✓ 已关闭
+- 关闭方式：两个 schema 的 `OrderResponse` 均增加 `oneOf` 条件约束——`SUCCESS/COMPLETED` 时不允许出现 `failReason`；`FAIL` 时 `failReason` 必填且 `minLength: 1`。
 
-> 备注：`schema/` 来自契约定义，其余目录为支撑后续生成工作的工程化补充
+3. ~~业务失败文案术语差异~~ ✓ 已关闭
+- 关闭方式：统一为 `Card invalid` / `Insufficient balance`，与 requirement 语义对齐；具体触发条件从 schema 中移除，由 spec 约束。
 
-## 6. 分阶段生成顺序
+4. ~~Mock 仿真逻辑混入接口定义~~ ✓ 已关闭
+- 关闭方式：从接口、字段与 response 描述中清除所有 Mock 仿真规则（卡号前缀判定、状态推进时序、实现细节）；schema 仅保留纯契约语义，业务规则统一由 spec 定义。
 
-1. 固化 `schema` 契约基线
-2. 细化 `spec` 行为规范
-3. 生成 Python 目录结构与实现骨架
-4. 生成测试样例、测试报告与示例数据
+## 8. 验收标准
 
-> 备注：第 1 步来源：schema；第 2～4 步为需求落实与工程化补充
+- Plan、Spec、Schema 三者可追溯且无冲突。
+- 所有接口响应在结构和状态码上满足 requirement + guideline。
+- 成功响应不出现空错误字段；失败响应含 failReason；HTTP 错误使用 code/detail。
+- 卡号在 DB（存储层）与对外（查询/回调/响应）均按要求掩码，且不包含 CVV/expiry。
 
-## 7. 验收标准
+## 9. 下一步执行建议
 
-- `order_server` 与 `callback_server` 的接口行为与本计划及 schema 保持一致
-- 所有失败响应均返回 `FAIL + failReason`
-- callback 查询满足 `422 / 200 / 404` 三种分支
-- 文档能够直接支撑后续 schema、spec、实现代码和测试生成
-
-> 备注：来源：需求
-
-## 8. 同步提醒
-
-- `POST /order` 的业务失败分支需覆盖两类 `400`：`Unsupported card type` 与 `Insufficient balance`
-- callback 查询逻辑以本计划为准：存在返回 `200`，不存在返回 `404`
-
-> 备注：来源：工程化补充
+1. ~~完成 schema 修订并提交差距关闭记录。~~ ✓ 已完成
+2. ~~基于固化后的 schema 生成 spec，落定状态机、卡号触发规则与回调触发点。~~ ✓ 已完成
+3. ~~在开发模式下再进入代码实现与测试落地。~~ ✓ 已完成
+4. ~~验证与回归：全部 spec validationChecklist 条目均有对应测试，16/16 通过。~~ ✓ 已完成
 

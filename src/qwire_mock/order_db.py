@@ -42,7 +42,7 @@ def _conn(use_db: bool = True):
 def mask_card(card_number: str) -> str:
     value = (card_number or "").strip()
     if len(value) >= 10:
-        return f"{value[:6]}{'*' * (len(value) - 10)}{value[-4:]}"
+        return f"{value[:6]}{'*' * 6}{value[-4:]}"
     if len(value) >= 4:
         return f"{value[:2]}{'*' * (len(value) - 4)}{value[-2:]}"
     return "*" * len(value)

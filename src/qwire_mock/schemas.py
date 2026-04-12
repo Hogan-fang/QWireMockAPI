@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 OrderStatus = Literal["SUCCESS", "COMPLETED", "FAIL"]
+ProductStatus = Literal["PROCESSING", "SHIPPED", "DELIVERED", "FAIL"]
 
 
 class ProductRequest(BaseModel):
@@ -17,7 +18,7 @@ class ProductResponse(BaseModel):
     productId: str
     count: int = Field(..., ge=0, le=100)
     spec: str
-    status: str
+    status: ProductStatus
 
 
 class OrderRequest(BaseModel):
@@ -50,15 +51,3 @@ class OrderResponse(BaseModel):
 
 class Received(BaseModel):
     message: str = "OK"
-
-
-class CallbackRecord(BaseModel):
-    reference: UUID
-    receivedAt: datetime
-    payload: OrderResponse
-
-
-class CallbackCheckResponse(BaseModel):
-    reference: UUID
-    total: int
-    records: list[CallbackRecord]

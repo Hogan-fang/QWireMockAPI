@@ -7,7 +7,7 @@
   "amount": 99.99,
   "currency": "USD",
   "status": "FAIL",
-  "failReason": "Unsupported card type",
+  "failReason": "Card invalid",
   "cardNumber": "411111******1111",
   "products": [
     {

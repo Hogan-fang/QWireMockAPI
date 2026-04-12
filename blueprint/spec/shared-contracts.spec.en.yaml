@@ -1,48 +1,73 @@
-specVersion: "1.0"
-service: "shared-contracts"
-status: "draft"
+specVersion: "2.0"  # 来源：元信息
+service: shared_contracts  # 来源：元信息
+status: ready  # 来源：元信息
 
-purpose:
-  - "Define shared contract rules for order-server and callback-server"
-  - "Unify naming, status, timing, and logging constraints"
-  - "Act as a common semantic layer between schema and implementation"
+documentRole:  # 来源：需求
+  value: Shared contract definitions for order_server and callback_server  # 来源：需求
 
-contracts:
-  naming:
-    - "HTTP request and response fields use camelCase"
-    - "Database table and column names use snake_case"
-    - "Cross-layer naming differences must be mapped explicitly in implementation"
+sourceLegend:  # 来源：元信息
+  requirement: Direct from business requirement or user supplementary rules  # 来源：元信息
+  schema: Direct from OpenAPI definitions under blueprint/schema  # 来源：元信息
+  engineering: Engineering constraints added to unify implementation, logging and testing  # 来源：元信息
 
-  status:
-    - "All order and product statuses use uppercase strings"
-    - "Allowed order statuses: SUCCESS, COMPLETED, FAIL"
-    - "Allowed product statuses: PROCESSING, SHIPPED, DELIVERED, FAIL"
+contracts:  # 来源：需求
+  naming:  # 来源：工程补充
+    - rule: HTTP request and response fields use camelCase uniformly  # 来源：工程补充
+    - rule: Database table and column names use snake_case uniformly  # 来源：工程补充
 
-  persistence:
-    - "Order master data must be persisted to the database"
-    - "Order product data must be persisted to the database"
-    - "Callback records are log-based by default and do not require database persistence"
+  statusModel:  # 来源：需求
+    orderStatus:  # 来源：需求
+      values:  # 来源：需求
+        - SUCCESS  # 来源：需求
+        - COMPLETED  # 来源：需求
+        - FAIL  # 来源：需求
+    productStatus:  # 来源：需求
+      values:  # 来源：需求
+        - PROCESSING  # 来源：需求
+        - SHIPPED  # 来源：需求
+        - DELIVERED  # 来源：需求
+        - FAIL  # 来源：需求
+    rule:  # 来源：需求
+      value: All status values must use uppercase strings  # 来源：需求
 
-  masking:
-    - "cardNumber in responses must use first-6 last-4 masking"
-    - "CVV and expiry must not appear in order responses or callback payloads"
+  persistence:  # 来源：需求
+    order:  # 来源：需求
+      value: Order master data and product details must be persisted to database  # 来源：需求
+    callback:  # 来源：需求
+      value: callback data stored only in memory and logs, no database persistence  # 来源：需求
 
-  timing:
-    - "ORDER_SUCCESS callback should be emitted immediately after successful order creation"
-    - "About 30 seconds after creation, product status transitions to SHIPPED"
-    - "About 60 seconds after creation, product status transitions to DELIVERED"
-    - "When all products are DELIVERED, order status transitions to COMPLETED"
+  privacy:  # 来源：需求
+    - rule: cardNumber in any output must use first 6 last 4 masking  # 来源：需求
+    - rule: cvv and expiry must not appear in OrderResponse, callback payload or log sensitive fields  # 来源：需求
 
-  callback:
-    - "Callback event types must include ORDER_SUCCESS, ORDER_SHIPPED, ORDER_DELIVERED, and ORDER_COMPLETED"
-    - "Callback requests and responses must be written to readable logs"
+  lifecycle:  # 来源：需求
+    - rule: After successful order creation, order status is SUCCESS, product status is PROCESSING  # 来源：需求
+    - rule: About 30 seconds later, product status advances to SHIPPED  # 来源：需求
+    - rule: About 60 seconds later, product status advances to DELIVERED  # 来源：需求
+    - rule: After all products are DELIVERED, order status advances to COMPLETED  # 来源：需求
 
-  errorHandling:
-    - "All failure responses use FAIL as status"
-    - "Failure reason field uses failReason"
-    - "Invalid reference input must return a clear error message"
+  callbackEvents:  # 来源：需求
+    requiredEvents:  # 来源：需求
+      - ORDER_SUCCESS  # 来源：需求
+      - ORDER_SHIPPED  # 来源：需求
+      - ORDER_DELIVERED  # 来源：需求
+      - ORDER_COMPLETED  # 来源：需求
 
-testScenarios:
-  - "Shared status values stay consistent with schema enums"
-  - "Shared masking rules are satisfied by both order-server and callback-server"
-  - "Shared timing rules are verifiable in integration tests"
+  errorHandling:  # 来源：需求
+    - rule: All failure scenarios uniformly use FAIL  # 来源：需求
+    - rule: Failure scenarios must include failReason  # 来源：需求
+    - rule: Both order_server and callback_server query interfaces return 422 for invalid UUID  # 来源：需求
+
+  cardBusinessRules:  # 来源：需求
+    - rule: When cardNumber starts with 4, POST /order returns business failure with failReason `Card invalid`  # 来源：需求
+    - rule: When cardNumber starts with 5, POST /order returns business failure with failReason `Insufficient balance`  # 来源：需求
+    - rule: Above rules apply only during POST /order creation processing phase, not applicable in GET /order query phase  # 来源：需求
+
+  logging:  # 来源：工程补充
+    - rule: Both services must output readable logs, at least including reference, orderId, status and callbackEvent  # 来源：工程补充
+    - rule: Callback received data must be referenceable in test reports  # 来源：工程补充
+
+validationChecklist:  # 来源：需求
+  - item: Shared status enums consistent with schema and spec  # 来源：需求
+  - item: Masking and sensitive field scrubbing rules take effect in both services  # 来源：需求
+  - item: Lifecycle and callback events verifiable in integration tests  # 来源：需求

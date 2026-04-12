@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -14,6 +14,9 @@ from qwire_mock.schemas import OrderResponse, Received
 logger = logging.getLogger(__name__)
 CONFIG = load_config()
 LOGGING_CONFIG = CONFIG["logging"]
+
+# In-memory callback store: reference (str) -> latest OrderResponse
+_callback_store: dict[str, OrderResponse] = {}
 
 
 def _ensure_file_logger() -> None:
@@ -45,6 +48,7 @@ async def lifespan(_: FastAPI):
     finally:
         logger.info("callback service shutdown")
 
+
 app = FastAPI(title="QWire Callback API v2", version="2.0.0", lifespan=lifespan)
 
 
@@ -64,16 +68,13 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
-    code = "resource_not_found" if exc.status_code == 404 else "http_error"
-    return JSONResponse(status_code=exc.status_code, content={"code": code, "detail": exc.detail})
-
-
 @app.post("/callback", response_model=Received)
 def callback(body: OrderResponse) -> Received:
     payload = body.model_dump(mode="json")
     logger.info("POST /callback request:\n%s", _json(payload))
+
+    _callback_store[str(body.reference)] = body
+    logger.info("POST /callback stored reference=%s", body.reference)
 
     response = Received(message="OK")
     logger.info("POST /callback response:\n%s", _json(response.model_dump(mode="json")))
@@ -81,6 +82,27 @@ def callback(body: OrderResponse) -> Received:
 
 
 @app.get("/check")
-def check(reference: UUID = Query(..., description="Order reference (UUID)")):
-    logger.info("GET /check reference=%s -> callback records are log-only, no persisted query", reference)
-    raise HTTPException(status_code=404, detail="Callback records are log-only and not queryable")
+def check(reference: str = Query(..., description="Order reference (UUID)")):
+    try:
+        reference_uuid = UUID(reference)
+    except ValueError:
+        logger.warning("GET /check invalid UUID: reference=%s", reference)
+        return JSONResponse(
+            status_code=422,
+            content={"code": "invalid_reference", "detail": "Invalid UUID format"},
+        )
+
+    key = str(reference_uuid)
+    record = _callback_store.get(key)
+    if record is None:
+        logger.info("GET /check not found: reference=%s", reference_uuid)
+        return JSONResponse(
+            status_code=404,
+            content={"code": "callback_not_found", "detail": "Callback record not found"},
+        )
+
+    payload = record.model_dump(mode="json")
+    if record.failReason is None:
+        payload.pop("failReason", None)
+    logger.info("GET /check response:\n%s", _json(payload))
+    return JSONResponse(status_code=200, content=payload)

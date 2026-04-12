@@ -142,7 +142,7 @@ def create_order(body: OrderRequest):
         )
 
     if body.cardNumber.strip().startswith("4"):
-        failed_order = order_db.create_order(body, status="FAIL", failReason="Unsupported card type")
+        failed_order = order_db.create_order(body, status="FAIL", failReason="Card invalid")
         payload = failed_order.model_dump(mode="json")
         logger.info("POST /order response(400):\n%s", _json(payload))
         return JSONResponse(status_code=400, content=payload)

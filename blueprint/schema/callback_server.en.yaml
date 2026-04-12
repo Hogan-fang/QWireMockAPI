@@ -134,7 +134,7 @@ components:
           minLength: 1
         cardNumber:
           type: string
-          pattern: '^\\d{6}\\*{6}\\d{4}$'
+          pattern: '^\d{6}\*{6}\d{4}$'
         products:
           type: array
           items:
