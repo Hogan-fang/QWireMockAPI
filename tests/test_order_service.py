@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import qwire_mock.order_service as order_service
-from qwire_mock.schemas import OrderResponse, ProductResponse
+from qwire_mock.schemas import OrderCreateResponse, OrderQueryResponse, ProductQueryResponse
 
 
 @pytest.fixture
@@ -17,317 +17,199 @@ def order_client(monkeypatch: pytest.MonkeyPatch):
         yield client
 
 
-def _build_order_response(reference: str, status: str = "SUCCESS", failReason: str | None = None) -> OrderResponse:
-    return OrderResponse(
-        reference=reference,
-        orderId="PX1001",
-        name="Widget Adapter Order",
-        mid="M123456789",
-        orderDate=datetime.now(timezone.utc),
+def _build_create_response(
+    order_id: str,
+    payment_status: str = "PAID",
+    fail_reason: str | None = None,
+) -> OrderCreateResponse:
+    now = datetime.now(timezone.utc)
+    return OrderCreateResponse(
+        orderId=order_id,
+        reference="ORDER-001",
+        merchantId="M10001",
         amount=99.99,
-        currency="USD",
-        status=status,
-        cardNumber="622222******2222",
-        products=[ProductResponse(productId="29838-02", count=2, spec="xs-83", status="FAIL" if status == "FAIL" else "PROCESSING")],
-        failReason=failReason,
+        currency="CAD",
+        paymentStatus=payment_status,
+        createTime=now,
+        finishTime=now,
+        failReason=fail_reason,
     )
 
 
-@pytest.mark.case(point="POST /order creates successfully and returns a masked card")
-def test_v2_create_order_success_returns_201_and_masked_card(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    callback_events: list[tuple[str, str]] = []
-
-    monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: False)
-    monkeypatch.setattr(
-        order_service.order_db,
-        "create_order",
-        lambda _request, status, failReason=None: _build_order_response(str(_request.reference), status, failReason),
+def _build_query_response(order_id: str, payment_status: str = "PAID") -> OrderQueryResponse:
+    return OrderQueryResponse(
+        orderId=order_id,
+        reference="ORDER-001",
+        merchantId="M10001",
+        amount=99.99,
+        currency="CAD",
+        cardNumber="411111******1111",
+        paymentStatus=payment_status,
+        orderStatus="PROCESSING",
+        products=[
+            ProductQueryResponse(
+                sku="SKU-1",
+                name="SKU-1",
+                quantity=1,
+                unitPrice=99.99,
+                amount=99.99,
+            )
+        ],
+        failReason="余额不足" if payment_status == "FAILED" else None,
     )
-    monkeypatch.setattr(order_service.order_db, "get_callback_info", lambda _reference: ("http://localhost:8100/callback", 99.99))
-    monkeypatch.setattr(
-        order_service,
-        "_dispatch_callback",
-        lambda order, callback_url, event_type: callback_events.append((str(order.reference), event_type)),
-    )
 
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    payload = {
-        "reference": ref,
-        "name": "Widget Adapter Order",
-        "callback": "http://localhost:8100/callback",
-        "mid": "M123456789",
-        "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "6222222222222222",
-        "cvv": "123",
-        "expiry": "12/28",
+
+def _payload(reference: str, card_number: str = "6222222222222222", currency: str = "CAD") -> dict:
+    return {
+        "reference": reference,
+        "merchantId": "M10001",
         "amount": 99.99,
-        "currency": "USD",
-        "products": [{"productId": "29838-02", "count": 2, "spec": "xs-83"}],
-    }
-
-    response = order_client.post("/order", json=payload)
-    assert response.status_code == 201
-    body = response.json()
-
-    assert body["status"] == "SUCCESS"
-    assert body["reference"] == ref
-    assert body["cardNumber"] == "622222******2222"
-    assert "cvv" not in body
-    assert "expiry" not in body
-    assert "failReason" not in body
-    assert callback_events == [(ref, "ORDER_SUCCESS")]
-
-
-@pytest.mark.case(point="POST /order duplicate reference returns 409 with unified HTTP error payload")
-def test_v2_create_order_conflict_returns_409(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: True)
-
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    payload = {
-        "reference": ref,
-        "name": "Duplicate Order",
-        "callback": "http://localhost:8100/callback",
-        "mid": "M123456789",
-        "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
+        "currency": currency,
+        "cardholderName": "TEST USER",
+        "cardNumber": card_number,
         "cvv": "123",
         "expiry": "12/28",
-        "amount": 10.5,
-        "currency": "USD",
-        "products": [{"productId": "P-DUP", "count": 1, "spec": "S"}],
+        "products": [
+            {
+                "sku": "SKU-1",
+                "quantity": 1,
+                "unitPrice": 99.99,
+                "amount": 99.99,
+            }
+        ],
     }
 
-    response = order_client.post("/order", json=payload)
-    assert response.status_code == 409
-    body = response.json()
-    assert body["code"] == "order_conflict"
-    assert body["detail"] == "Order already exists"
-    assert "status" not in body
-    assert "failReason" not in body
 
-
-@pytest.mark.case(point="POST /order card number starting with 4 returns 400 and FAIL")
-def test_v2_create_order_invalid_card_returns_400(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: False)
+@pytest.mark.case(point="POST /order PAID returns 200 and excludes failReason")
+def test_create_order_paid_returns_200(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    oid = str(uuid4())
+    monkeypatch.setattr(order_service.order_db, "exists", lambda merchant_id, reference: False)
     monkeypatch.setattr(
         order_service.order_db,
         "create_order",
-        lambda request, status, failReason=None: _build_order_response(
-            str(request.reference), status="FAIL", failReason="Card invalid"
+        lambda request, callback_url, payment_status, order_status, fail_reason=None: _build_create_response(
+            oid,
+            payment_status,
+            fail_reason,
         ),
     )
+    events: list[str] = []
+    monkeypatch.setattr(order_service, "_dispatch_callback", lambda payload, callback_url: events.append(payload.orderStatus))
 
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    payload = {
-        "reference": ref,
-        "name": "Invalid Card Order",
-        "callback": "http://localhost:8100/callback",
-        "mid": "M123456789",
-        "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "4111111111111111",
-        "cvv": "123",
-        "expiry": "12/28",
-        "amount": 99.99,
-        "currency": "USD",
-        "products": [{"productId": "P1", "count": 1, "spec": "S"}],
-    }
-
-    response = order_client.post("/order", json=payload)
-    assert response.status_code == 400
-    body = response.json()
-    assert body["status"] == "FAIL"
-    assert body["failReason"] == "Card invalid"
-
-
-@pytest.mark.case(point="POST /order card number starting with 5 returns 400 and FAIL with insufficient balance")
-def test_v2_create_order_insufficient_balance_returns_400(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: False)
-    monkeypatch.setattr(
-        order_service.order_db,
-        "create_order",
-        lambda request, status, failReason=None: _build_order_response(
-            str(request.reference), status="FAIL", failReason="Insufficient balance"
-        ),
-    )
-
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    payload = {
-        "reference": ref,
-        "name": "Insufficient Balance Order",
-        "callback": "http://localhost:8100/callback",
-        "mid": "M123456789",
-        "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5222222222222222",
-        "cvv": "123",
-        "expiry": "12/28",
-        "amount": 99.99,
-        "currency": "USD",
-        "products": [{"productId": "P2", "count": 1, "spec": "M"}],
-    }
-
-    response = order_client.post("/order", json=payload)
-    assert response.status_code == 400
-    body = response.json()
-    assert body["status"] == "FAIL"
-    assert body["failReason"] == "Insufficient balance"
-
-
-@pytest.mark.case(point="POST /order invalid UUID in request body returns 422 from framework validation")
-def test_v2_create_order_invalid_uuid_returns_422(order_client: TestClient, record_order_keyword):
-    bad_ref = "1aba8bca-a65b-4954-b459-6757591"
-    record_order_keyword(bad_ref)
-    payload = {
-        "reference": bad_ref,
-        "name": "Bad UUID Order",
-        "callback": "http://localhost:8100/callback",
-        "mid": "M123456789",
-        "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "5555555555554444",
-        "cvv": "123",
-        "expiry": "12/28",
-        "amount": 55.0,
-        "currency": "USD",
-        "products": [{"productId": "P-BAD-UUID", "count": 1, "spec": "S"}],
-    }
-
-    response = order_client.post("/order", json=payload)
-    assert response.status_code == 422
-    body = response.json()
-    assert body["code"] == "invalid_request"
-    assert body["detail"] == "Request validation failed"
-
-
-@pytest.mark.case(point="GET /order invalid UUID returns 422 with unified HTTP error payload")
-def test_v2_get_order_invalid_uuid_returns_422(order_client: TestClient, record_order_keyword):
-    record_order_keyword("not-a-uuid")
-    response = order_client.get("/order", params={"reference": "not-a-uuid"})
-    assert response.status_code == 422
-    body = response.json()
-    assert body["code"] == "invalid_reference"
-    assert body["detail"] == "invalid UUID string"
-
-
-@pytest.mark.case(point="GET /order order not found returns 404 with unified HTTP error payload")
-def test_v2_get_order_not_found_returns_404(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    monkeypatch.setattr(order_service.order_db, "get_order", lambda _reference: None)
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    response = order_client.get("/order", params={"reference": ref})
-    assert response.status_code == 404
-    body = response.json()
-    assert body["code"] == "order_not_found"
-    assert body["detail"] == "Order not found"
-    assert "reference" not in body
-
-
-@pytest.mark.case(point="GET /order successful query returns 200")
-def test_v2_get_order_found_returns_200(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    monkeypatch.setattr(order_service.order_db, "get_order", lambda _reference: _build_order_response(ref))
-
-    response = order_client.get("/order", params={"reference": ref})
+    response = order_client.post("/order", json=_payload("ORDER-PAID"))
     assert response.status_code == 200
     body = response.json()
-    assert body["reference"] == ref
-    assert body["status"] == "SUCCESS"
+    assert body["paymentStatus"] == "PAID"
     assert "failReason" not in body
+    assert events == ["PROCESSING"]
 
 
-@pytest.mark.case(point="Create then query: returns the same reference and orderId")
-def test_v2_create_then_get_order_flow(
-    order_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    record_order_keyword,
-):
-    ref = str(uuid4())
-    order_response = _build_order_response(ref)
+@pytest.mark.case(point="POST /order card starting with 4 returns 400 without persistence")
+def test_create_order_invalid_card_returns_400(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    called = {"create": 0}
 
-    monkeypatch.setattr(order_service.order_db, "exists", lambda _reference: False)
-    monkeypatch.setattr(order_service.order_db, "create_order", lambda _request, status, failReason=None: order_response)
-    monkeypatch.setattr(order_service.order_db, "get_order", lambda _reference: order_response)
-    monkeypatch.setattr(order_service.order_db, "get_callback_info", lambda _reference: None)
+    monkeypatch.setattr(order_service.order_db, "exists", lambda merchant_id, reference: False)
 
-    record_order_keyword(ref)
+    def _not_called(*args, **kwargs):
+        called["create"] += 1
+        return _build_create_response(str(uuid4()))
 
-    create_payload = {
-        "reference": ref,
-        "name": "Create Then Query",
-        "callback": "http://localhost:8100/callback",
-        "mid": "M123456789",
-        "signature": "8f14e45fceea167a5a36dedd4bea2543",
-        "cardNumber": "6222222222222222",
-        "cvv": "123",
-        "expiry": "12/28",
-        "amount": 31.2,
-        "currency": "USD",
-        "products": [{"productId": "P-CQ", "count": 1, "spec": "M"}],
-    }
+    monkeypatch.setattr(order_service.order_db, "create_order", _not_called)
 
-    create_response = order_client.post("/order", json=create_payload)
-    assert create_response.status_code == 201
-
-    get_response = order_client.get("/order", params={"reference": ref})
-    assert get_response.status_code == 200
-    assert get_response.json()["reference"] == ref
-    assert get_response.json()["orderId"] == order_response.orderId
+    response = order_client.post("/order", json=_payload("ORDER-400", card_number="4111111111111111"))
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid card number"}
+    assert called["create"] == 0
 
 
-@pytest.mark.case(point="Amount threshold policy: high amount skips callback, low amount triggers callback")
-def test_v2_dispatch_callback_skip_by_amount_policy(monkeypatch: pytest.MonkeyPatch, record_order_keyword):
-    called = {"count": 0}
+@pytest.mark.case(point="POST /order card starting with 5 returns 200 with FAILED and failReason")
+def test_create_order_balance_failed_returns_200(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    oid = str(uuid4())
+    monkeypatch.setattr(order_service.order_db, "exists", lambda merchant_id, reference: False)
+    monkeypatch.setattr(
+        order_service.order_db,
+        "create_order",
+        lambda request, callback_url, payment_status, order_status, fail_reason=None: _build_create_response(
+            oid,
+            payment_status,
+            fail_reason,
+        ),
+    )
 
-    class DummyResponse:
-        status = 200
+    response = order_client.post("/order", json=_payload("ORDER-FAILED", card_number="5222222222222222"))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["paymentStatus"] == "FAILED"
+    assert body["failReason"] == "余额不足"
 
-        def __enter__(self):
-            return self
 
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            return False
+@pytest.mark.case(point="POST /order duplicate returns 409")
+def test_create_order_duplicate_returns_409(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(order_service.order_db, "exists", lambda merchant_id, reference: True)
 
-    def _fake_urlopen(*_args, **_kwargs):
-        called["count"] += 1
-        return DummyResponse()
+    response = order_client.post("/order", json=_payload("ORDER-DUP"))
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Duplicate order"}
 
-    monkeypatch.setattr(order_service.urllib.request, "urlopen", _fake_urlopen)
-    monkeypatch.setattr(order_service, "CALLBACK_SKIP_AMOUNT_GTE", 1000.0)
 
-    high_amount_order = _build_order_response(str(uuid4()))
-    high_amount_order.amount = 1200.0
-    order_service._dispatch_callback(high_amount_order, "http://localhost:8100/callback", "ORDER_SUCCESS")
+@pytest.mark.case(point="POST /order invalid currency returns 400")
+def test_create_order_invalid_currency_returns_400(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(order_service.order_db, "exists", lambda merchant_id, reference: False)
 
-    low_amount_order = _build_order_response(str(uuid4()))
-    low_amount_order.amount = 99.0
-    record_order_keyword(low_amount_order.orderId)
-    order_service._dispatch_callback(low_amount_order, "http://localhost:8100/callback", "ORDER_SUCCESS")
+    response = order_client.post("/order", json=_payload("ORDER-CURR", currency="XXX"))
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid currency"}
 
-    assert called["count"] == 1
+
+@pytest.mark.case(point="GET /order by reference returns 200")
+def test_get_order_by_reference_returns_200(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    oid = str(uuid4())
+    monkeypatch.setattr(
+        order_service.order_db,
+        "get_order",
+        lambda merchant_id, reference=None, order_id=None: _build_query_response(oid),
+    )
+
+    response = order_client.get("/order", params={"merchantId": "M10001", "reference": "ORDER-001"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["merchantId"] == "M10001"
+    assert body["orderStatus"] == "PROCESSING"
+
+
+@pytest.mark.case(point="GET /order by orderId returns 200")
+def test_get_order_by_order_id_returns_200(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    oid = str(uuid4())
+    monkeypatch.setattr(
+        order_service.order_db,
+        "get_order",
+        lambda merchant_id, reference=None, order_id=None: _build_query_response(oid),
+    )
+
+    response = order_client.get("/order", params={"merchantId": "M10001", "orderId": oid})
+    assert response.status_code == 200
+    assert response.json()["orderId"] == oid
+
+
+@pytest.mark.case(point="GET /order invalid query combinations return 422")
+def test_get_order_invalid_query_returns_422(order_client: TestClient):
+    response_none = order_client.get("/order", params={"merchantId": "M10001"})
+    assert response_none.status_code == 422
+    assert response_none.json() == {"detail": "Invalid request"}
+
+    oid = str(uuid4())
+    response_both = order_client.get(
+        "/order",
+        params={"merchantId": "M10001", "reference": "ORDER-1", "orderId": oid},
+    )
+    assert response_both.status_code == 422
+    assert response_both.json() == {"detail": "Invalid request"}
+
+
+@pytest.mark.case(point="GET /order not found returns 404")
+def test_get_order_not_found_returns_404(order_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(order_service.order_db, "get_order", lambda merchant_id, reference=None, order_id=None: None)
+
+    response = order_client.get("/order", params={"merchantId": "M10001", "reference": "ORDER-404"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Order not exist"}

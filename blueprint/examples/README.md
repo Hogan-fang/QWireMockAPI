@@ -2,8 +2,8 @@
 
 This directory contains JSON request and response samples derived from:
 
-- `schema/order_server.yaml`
-- `schema/callback_server.yaml`
+- `schema/order_service.yaml`
+- `schema/callback_service.yaml`
 
 Subdirectories:
 

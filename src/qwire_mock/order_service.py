@@ -7,18 +7,24 @@ import urllib.request
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from qwire_mock import order_db
 from qwire_mock.config import load_config
-from qwire_mock.schemas import OrderRequest, OrderResponse
+from qwire_mock.schemas import OrderCallbackRequest, OrderCreateRequest
 
 logger = logging.getLogger(__name__)
 CONFIG = load_config()
 ORDER_CONFIG = CONFIG["order"]
 LOGGING_CONFIG = CONFIG["logging"]
+
+ALLOWED_CURRENCIES = {"CAD", "USD"}
+POLL_INTERVAL_SECONDS = int(ORDER_CONFIG["poll_interval_seconds"])
+PROCESS_HISTORICAL_ON_STARTUP = bool(ORDER_CONFIG.get("process_historical_on_startup", False))
+_stop_event = threading.Event()
+_scheduler_cutoff_time = None
 
 
 def _ensure_file_logger() -> None:
@@ -41,44 +47,35 @@ def _ensure_file_logger() -> None:
 
 _ensure_file_logger()
 
-POLL_INTERVAL_SECONDS = int(ORDER_CONFIG["poll_interval_seconds"])
-CALLBACK_SKIP_AMOUNT_GTE = float(ORDER_CONFIG["callback_skip_amount_gte"])
-PROCESS_HISTORICAL_ON_STARTUP = bool(ORDER_CONFIG.get("process_historical_on_startup", False))
-_stop_event = threading.Event()
-_scheduler_cutoff_time = None
-
 
 def _json(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, default=str)
 
 
-def _dispatch_callback(order: OrderResponse, callback_url: str, event_type: str) -> None:
-    if order.amount >= CALLBACK_SKIP_AMOUNT_GTE:
-        logger.info(
-            "skip callback by amount policy: reference=%s amount=%s threshold=%s event=%s",
-            order.reference,
-            order.amount,
-            CALLBACK_SKIP_AMOUNT_GTE,
-            event_type,
-        )
-        return
+def _sanitize_create_request(payload: dict) -> dict:
+    sanitized = dict(payload)
+    sanitized.pop("cvv", None)
+    sanitized.pop("expiry", None)
+    sanitized.pop("cardholderName", None)
+    if "cardNumber" in sanitized:
+        sanitized["cardNumber"] = order_db.mask_card(str(sanitized["cardNumber"]))
+    return sanitized
 
-    payload = order.model_dump(mode="json")
-    payload["eventType"] = event_type
-    logger.info("dispatch callback -> %s\n%s", callback_url, _json(payload))
 
-    body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
-    request = urllib.request.Request(callback_url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+def _dispatch_callback(payload: OrderCallbackRequest, callback_url: str) -> None:
+    body = payload.model_dump(mode="json")
+    logger.info("dispatch callback -> %s\n%s", callback_url, _json(body))
+
+    request_body = json.dumps(body, ensure_ascii=False, default=str).encode("utf-8")
+    request = urllib.request.Request(
+        callback_url,
+        data=request_body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     try:
         with urllib.request.urlopen(request, timeout=5) as response:
             logger.info("callback response status=%s", response.status)
-            raw_body = response.read().decode("utf-8", errors="replace").strip()
-            if raw_body:
-                try:
-                    response_payload = json.loads(raw_body)
-                    logger.info("callback response body:\n%s", _json(response_payload))
-                except json.JSONDecodeError:
-                    logger.info("callback response body(raw): %s", raw_body)
     except urllib.error.HTTPError as exc:
         logger.warning("callback http error: %s", exc)
     except Exception as exc:
@@ -87,12 +84,17 @@ def _dispatch_callback(order: OrderResponse, callback_url: str, event_type: str)
 
 def _status_scheduler() -> None:
     while not _stop_event.is_set():
-        transitions = order_db.apply_scheduled_transitions(min_created_at=_scheduler_cutoff_time)
+        transitions = order_db.apply_scheduled_transitions(min_create_time=_scheduler_cutoff_time)
         for target in transitions:
-            order = order_db.get_order(target.reference)
-            if order is None:
-                continue
-            _dispatch_callback(order, target.callback_url, f"ORDER_{target.target_status}")
+            callback = OrderCallbackRequest(
+                orderId=target.order_id,
+                reference=target.reference,
+                merchantId=target.merchant_id,
+                paymentStatus=target.payment_status,
+                orderStatus=target.order_status,
+                finishTime=target.finish_time,
+            )
+            _dispatch_callback(callback, target.callback_url)
         _stop_event.wait(POLL_INTERVAL_SECONDS)
 
 
@@ -116,74 +118,86 @@ async def lifespan(_: FastAPI):
         logger.info("order service shutdown")
 
 
-app = FastAPI(title="QWire Order API v2", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="QWire Order API v3", version="3.0.0", lifespan=lifespan)
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    logger.warning("request validation failed: path=%s errors=%s", request.url.path, exc.errors())
-    return JSONResponse(
-        status_code=422,
-        content={
-            "code": "invalid_request",
-            "detail": "Request validation failed",
-        },
-    )
+async def validation_error_handler(_: Request, __: RequestValidationError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": "Invalid request"})
 
 
 @app.post("/order")
-def create_order(body: OrderRequest):
-    logger.info("POST /order request:\n%s", _json(body.model_dump(mode="json")))
+def create_order(body: OrderCreateRequest, _: str | None = Header(default=None, alias="X-Mock-Signature")):
+    logger.info("POST /order request:\n%s", _json(_sanitize_create_request(body.model_dump(mode="json"))))
 
-    if order_db.exists(body.reference):
-        return JSONResponse(
-            status_code=409,
-            content={"code": "order_conflict", "detail": "Order already exists"},
-        )
+    if body.currency not in ALLOWED_CURRENCIES:
+        return JSONResponse(status_code=400, content={"detail": "Invalid currency"})
+
+    if order_db.exists(body.merchantId, body.reference):
+        return JSONResponse(status_code=409, content={"detail": "Duplicate order"})
 
     if body.cardNumber.strip().startswith("4"):
-        failed_order = order_db.create_order(body, status="FAIL", failReason="Card invalid")
-        payload = failed_order.model_dump(mode="json")
-        logger.info("POST /order response(400):\n%s", _json(payload))
-        return JSONResponse(status_code=400, content=payload)
+        return JSONResponse(status_code=400, content={"detail": "Invalid card number"})
+
+    callback_url = f"http://127.0.0.1:{CONFIG['server']['callback_port']}/callback"
 
     if body.cardNumber.strip().startswith("5"):
-        failed_order = order_db.create_order(body, status="FAIL", failReason="Insufficient balance")
-        payload = failed_order.model_dump(mode="json")
-        logger.info("POST /order response(400):\n%s", _json(payload))
-        return JSONResponse(status_code=400, content=payload)
+        created = order_db.create_order(
+            request=body,
+            callback_url=callback_url,
+            payment_status="FAILED",
+            order_status="PROCESSING",
+            fail_reason="余额不足",
+        )
+        payload = created.model_dump(mode="json")
+        logger.info("POST /order response(200):\n%s", _json(payload))
+        return JSONResponse(status_code=200, content=payload)
 
-    order = order_db.create_order(body, status="SUCCESS")
-    callback_info = order_db.get_callback_info(body.reference)
-    if callback_info is not None:
-        callback_url, _ = callback_info
-        _dispatch_callback(order, callback_url, "ORDER_SUCCESS")
+    created = order_db.create_order(
+        request=body,
+        callback_url=callback_url,
+        payment_status="PAID",
+        order_status="PROCESSING",
+    )
 
-    payload = order.model_dump(mode="json")
+    callback_payload = OrderCallbackRequest(
+        orderId=created.orderId,
+        reference=created.reference,
+        merchantId=created.merchantId,
+        paymentStatus="PAID",
+        orderStatus="PROCESSING",
+        finishTime=created.finishTime or created.createTime,
+    )
+    _dispatch_callback(callback_payload, callback_url)
+
+    payload = created.model_dump(mode="json")
     payload.pop("failReason", None)
-    logger.info("POST /order response(201):\n%s", _json(payload))
-    return JSONResponse(status_code=201, content=payload)
+    logger.info("POST /order response(200):\n%s", _json(payload))
+    return JSONResponse(status_code=200, content=payload)
 
 
 @app.get("/order")
-def get_order(reference: str = Query(..., description="Order reference (UUID)")):
-    try:
-        reference_uuid = UUID(reference)
-    except ValueError:
-        return JSONResponse(
-            status_code=422,
-            content={"code": "invalid_reference", "detail": "invalid UUID string"},
-        )
+def get_order(
+    merchantId: str = Query(...),
+    reference: str | None = Query(default=None),
+    orderId: str | None = Query(default=None),
+):
+    if (reference is None and orderId is None) or (reference is not None and orderId is not None):
+        return JSONResponse(status_code=422, content={"detail": "Invalid request"})
 
-    order = order_db.get_order(reference_uuid)
+    order_uuid: UUID | None = None
+    if orderId is not None:
+        try:
+            order_uuid = UUID(orderId)
+        except ValueError:
+            return JSONResponse(status_code=422, content={"detail": "Invalid request"})
+
+    order = order_db.get_order(merchant_id=merchantId, reference=reference, order_id=order_uuid)
     if order is None:
-        return JSONResponse(
-            status_code=404,
-            content={"code": "order_not_found", "detail": "Order not found"},
-        )
+        return JSONResponse(status_code=404, content={"detail": "Order not exist"})
 
     payload = order.model_dump(mode="json")
-    if order.failReason is None:
+    if order.paymentStatus != "FAILED":
         payload.pop("failReason", None)
     logger.info("GET /order response:\n%s", _json(payload))
     return JSONResponse(status_code=200, content=payload)

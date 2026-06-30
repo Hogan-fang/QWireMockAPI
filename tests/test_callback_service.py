@@ -8,80 +8,60 @@ import qwire_mock.callback_service as callback_service
 client = TestClient(callback_service.app)
 
 
-def _callback_payload(reference: str) -> dict:
+def _callback_payload(order_id: str) -> dict:
     return {
-        "reference": reference,
-        "orderId": "PX2001",
-        "name": "Callback Test Order",
-        "mid": "M123456789",
-        "orderDate": "2026-02-28T10:00:00Z",
-        "amount": 99.99,
-        "currency": "USD",
-        "status": "SUCCESS",
-        "cardNumber": "622222******2222",
-        "products": [{"productId": "P1", "count": 1, "spec": "S", "status": "PROCESSING"}],
+        "orderId": order_id,
+        "reference": "ORDER-001",
+        "merchantId": "M10001",
+        "paymentStatus": "PAID",
+        "orderStatus": "PROCESSING",
+        "finishTime": "2026-02-28T10:00:00Z",
     }
 
 
-@pytest.mark.case(point="POST /callback valid payload returns 200 and callback data is logged only")
-def test_v2_callback_receive_returns_ok(record_order_keyword):
-    ref = str(uuid4())
-    record_order_keyword(ref)
-
-    response1 = client.post("/callback", json=_callback_payload(ref))
-    response2 = client.post("/callback", json=_callback_payload(ref))
-
-    assert response1.status_code == 200
-    assert response2.status_code == 200
-    assert response1.json() == {"message": "OK"}
+@pytest.mark.case(point="POST /callback valid payload returns 200")
+def test_callback_receive_returns_success():
+    response = client.post("/callback", json=_callback_payload(str(uuid4())))
+    assert response.status_code == 200
+    assert response.json() == {"status": "SUCCESS"}
 
 
-@pytest.mark.case(point="GET /check returns 404 when reference has no stored callback")
-def test_v2_check_not_found_returns_404(record_order_keyword):
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    response = client.get("/check", params={"reference": ref})
-    assert response.status_code == 404
-    assert response.json()["code"] == "callback_not_found"
-
-
-@pytest.mark.case(point="POST /callback invalid payload returns 400 with unified HTTP error details")
-def test_v2_callback_invalid_payload_returns_400(record_order_keyword):
-    ref = str(uuid4())
-    record_order_keyword(ref)
-    payload = _callback_payload(ref)
-    payload.pop("status")
+@pytest.mark.case(point="POST /callback invalid payload returns 400 with detail only")
+def test_callback_invalid_payload_returns_400():
+    payload = _callback_payload(str(uuid4()))
+    payload.pop("paymentStatus")
 
     response = client.post("/callback", json=payload)
     assert response.status_code == 400
-    body = response.json()
-    assert body["code"] == "invalid_request"
-    assert body["detail"] == "Invalid order payload"
-    assert "errors" not in body
+    assert response.json() == {"detail": "Invalid request"}
 
 
-@pytest.mark.case(point="GET /check invalid UUID returns 422 with unified HTTP error payload")
-def test_v2_check_invalid_uuid_returns_422(record_order_keyword):
-    record_order_keyword("not-a-uuid")
-    response = client.get("/check", params={"reference": "not-a-uuid"})
+@pytest.mark.case(point="GET /callback/latest returns 422 for invalid UUID")
+def test_latest_callback_invalid_uuid_returns_422():
+    response = client.get("/callback/latest", params={"orderId": "bad-uuid"})
     assert response.status_code == 422
-    body = response.json()
-    assert body["code"] == "invalid_reference"
-    assert body["detail"] == "Invalid UUID format"
+    assert response.json() == {"detail": "Invalid request"}
 
 
-@pytest.mark.case(point="GET /check returns 200 with stored OrderResponse after POST /callback")
-def test_v2_check_found_returns_200(record_order_keyword):
-    ref = str(uuid4())
-    record_order_keyword(ref)
+@pytest.mark.case(point="GET /callback/latest returns 404 when not found")
+def test_latest_callback_not_found_returns_404():
+    response = client.get("/callback/latest", params={"orderId": str(uuid4())})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Callback not found."}
 
-    post_response = client.post("/callback", json=_callback_payload(ref))
+
+@pytest.mark.case(point="GET /callback/latest returns record and clears it")
+def test_latest_callback_found_then_cleared():
+    order_id = str(uuid4())
+    post_response = client.post("/callback", json=_callback_payload(order_id))
     assert post_response.status_code == 200
 
-    get_response = client.get("/check", params={"reference": ref})
-    assert get_response.status_code == 200
-    body = get_response.json()
-    assert body["reference"] == ref
-    assert body["status"] == "SUCCESS"
-    assert "cvv" not in body
-    assert "expiry" not in body
+    first = client.get("/callback/latest", params={"orderId": order_id})
+    assert first.status_code == 200
+    body = first.json()
+    assert body["orderId"] == order_id
+    assert body["paymentStatus"] == "PAID"
+
+    second = client.get("/callback/latest", params={"orderId": order_id})
+    assert second.status_code == 404
+    assert second.json() == {"detail": "Callback not found."}

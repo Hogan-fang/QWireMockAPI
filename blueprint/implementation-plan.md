@@ -13,8 +13,8 @@
 	- `QWireGuideline/guideline/methodology.md`
 	- `QWireGuideline/guideline/AI-guideline.md`
 - Schema 基线：
-	- `blueprint/schema/order_server.yaml`
-	- `blueprint/schema/callback_server.yaml`
+	- `blueprint/schema/order_service.yaml`
+	- `blueprint/schema/callback_service.yaml`
 
 ## 3. 目标与范围
 
@@ -77,8 +77,8 @@
 
 ### 阶段 B：行为规范（Spec）
 - 产出：
-	- `blueprint/spec/order-server.spec.yaml`
-	- `blueprint/spec/callback-server.spec.yaml`
+	- `blueprint/spec/order-service.spec.yaml`
+	- `blueprint/spec/callback-service.spec.yaml`
 	- `blueprint/spec/shared-contracts.spec.yaml`
 - 完成条件：状态机、回调时机、错误分层（业务失败 vs HTTP 错误）全部可验证。
 - 状态：✓ 已完成
@@ -116,7 +116,7 @@
 ### 7.2 差距项（已全部关闭）
 
 1. ~~掩码格式约束缺失~~ ✓ 已关闭
-- 关闭方式：在 `order_server.yaml` 的 `OrderResponse.cardNumber`、`OrderBusinessFailureResponse.cardNumber`，以及 `callback_server.yaml` 的 `OrderResponse.cardNumber` 统一加入 `pattern: '^\d{6}\*{6}\d{4}$'`。
+- 关闭方式：在 `order_service.yaml` 与 `callback_service.yaml` 的相关卡号字段统一加入掩码格式约束。
 
 2. ~~failReason 约束不够严格~~ ✓ 已关闭
 - 关闭方式：两个 schema 的 `OrderResponse` 均增加 `oneOf` 条件约束——`SUCCESS/COMPLETED` 时不允许出现 `failReason`；`FAIL` 时 `failReason` 必填且 `minLength: 1`。

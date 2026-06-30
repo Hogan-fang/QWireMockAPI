@@ -51,8 +51,8 @@
 
 - 总纲：`../implementation-plan.md`
 - 路线图：`./blueprint-roadmap.md`
-- Order 规格：`../spec/order-server.spec.yaml`
-- Callback 规格：`../spec/callback-server.spec.yaml`
+- Order 规格：`../spec/order-service.spec.yaml`
+- Callback 规格：`../spec/callback-service.spec.yaml`
 - Shared 规格：`../spec/shared-contracts.spec.yaml`
 
 > 备注：本节为工程化补充，用于便于检索与执行

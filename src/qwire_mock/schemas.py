@@ -4,50 +4,82 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-OrderStatus = Literal["SUCCESS", "COMPLETED", "FAIL"]
-ProductStatus = Literal["PROCESSING", "SHIPPED", "DELIVERED", "FAIL"]
+PaymentStatus = Literal["PROCESSING", "PAID", "FAILED", "TIMEOUT"]
+OrderStatus = Literal["PROCESSING", "DELIVERED"]
 
 
 class ProductRequest(BaseModel):
-    productId: str
-    count: int = Field(..., ge=0, le=100)
-    spec: str
+    sku: str
+    quantity: int = Field(..., ge=1)
+    unitPrice: float = Field(..., ge=0)
+    amount: float = Field(..., ge=0)
 
 
-class ProductResponse(BaseModel):
-    productId: str
-    count: int = Field(..., ge=0, le=100)
-    spec: str
-    status: ProductStatus
-
-
-class OrderRequest(BaseModel):
-    reference: UUID
+class ProductQueryResponse(BaseModel):
+    sku: str
     name: str
-    callback: str
-    mid: str = Field(..., max_length=10)
-    signature: str
+    quantity: int = Field(..., ge=1)
+    unitPrice: float = Field(..., ge=0)
+    amount: float = Field(..., ge=0)
+
+
+class OrderCreateRequest(BaseModel):
+    reference: str
+    merchantId: str
+    amount: float = Field(..., ge=0)
+    currency: str
+    status: str | None = None
+    paymentStatus: str | None = None
+    cardholderName: str
     cardNumber: str
     cvv: str
     expiry: str
-    amount: float
-    currency: str
-    products: list[ProductRequest]
+    products: list[ProductRequest] = Field(..., min_length=1)
 
 
-class OrderResponse(BaseModel):
-    reference: UUID
-    orderId: str
-    name: str
-    mid: str = Field(..., max_length=10)
-    orderDate: datetime
+class OrderCreateResponse(BaseModel):
+    orderId: UUID
+    reference: str
+    merchantId: str
     amount: float
     currency: str
-    status: OrderStatus
-    cardNumber: str
-    products: list[ProductResponse]
+    paymentStatus: PaymentStatus
+    createTime: datetime
+    finishTime: datetime | None = None
     failReason: str | None = None
 
 
-class Received(BaseModel):
-    message: str = "OK"
+class OrderQueryResponse(BaseModel):
+    orderId: UUID
+    reference: str
+    merchantId: str
+    amount: float
+    currency: str
+    cardNumber: str
+    paymentStatus: PaymentStatus
+    orderStatus: OrderStatus
+    products: list[ProductQueryResponse]
+    failReason: str | None = None
+
+
+class CallbackAckResponse(BaseModel):
+    status: Literal["SUCCESS"] = "SUCCESS"
+
+
+class OrderCallbackRequest(BaseModel):
+    orderId: UUID
+    reference: str
+    merchantId: str
+    paymentStatus: PaymentStatus
+    orderStatus: OrderStatus
+    finishTime: datetime
+
+
+class OrderCallbackQueryResponse(BaseModel):
+    callbackId: UUID
+    callbackTime: datetime
+    orderId: UUID
+    reference: str
+    merchantId: str
+    paymentStatus: PaymentStatus
+    orderStatus: OrderStatus

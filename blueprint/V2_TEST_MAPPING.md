@@ -36,7 +36,7 @@ Source file: `tests/test_v2_order_service.py`
 |---|---|
 | `test_v2_create_order_success_returns_201_and_masked_card` | Validates successful `POST /order` (201), `SUCCESS` status, card masking, no sensitive fields, and `ORDER_SUCCESS` callback event. |
 | `test_v2_create_order_conflict_returns_400` | Validates duplicate `reference` returns 400 with `Order already exists`. |
-| `test_v2_create_order_invalid_card_returns_400` | Validates card numbers starting with `4` fail with 400 + `FAIL` + reason. |
+| `test_v2_create_order_invalid_card_returns_400` | Validates card numbers starting with `4` fail with 400 + `FAIL` + failReason. |
 | `test_v2_create_order_invalid_uuid_returns_422` | Validates invalid UUID in `POST /order` body returns 422 from framework validation. |
 | `test_v2_get_order_invalid_uuid_returns_400` | Validates invalid UUID in `GET /order` query returns 400 + `invalid UUID string`. |
 | `test_v2_get_order_not_found_returns_404` | Validates `GET /order` returns 404 + `Order not found` for absent order. |

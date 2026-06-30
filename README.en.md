@@ -76,15 +76,15 @@ QWireMockAPI/
 │   │   ├── requirement.md              # Business requirement (Chinese)
 │   │   └── requirement.en.md           # Business requirement (English)
 │   ├── schema/
-│   │   ├── order_server.yaml           # Order API contract (Chinese)
+│   │   ├── order_service.yaml          # Order API contract (Chinese)
 │   │   ├── order_server.en.yaml        # Order API contract (English)
-│   │   ├── callback_server.yaml        # Callback API contract (Chinese)
+│   │   ├── callback_service.yaml       # Callback API contract (Chinese)
 │   │   └── callback_server.en.yaml     # Callback API contract (English)
 │   ├── spec/
-│   │   ├── order-server.spec.yaml      # Order behavior spec (Chinese)
-│   │   ├── order-server.spec.en.yaml   # Order behavior spec (English)
-│   │   ├── callback-server.spec.yaml   # Callback behavior spec (Chinese)
-│   │   ├── callback-server.spec.en.yaml # Callback behavior spec (English)
+│   │   ├── order-service.spec.yaml     # Order behavior spec (Chinese)
+│   │   ├── order-service.spec.en.yaml  # Order behavior spec (English)
+│   │   ├── callback-service.spec.yaml  # Callback behavior spec (Chinese)
+│   │   ├── callback-service.spec.en.yaml # Callback behavior spec (English)
 │   │   ├── shared-contracts.spec.yaml  # Shared contracts (Chinese)
 │   │   └── shared-contracts.spec.en.yaml # Shared contracts (English)
 │   ├── implementation-plan.md           # Implementation plan (Chinese)
@@ -172,13 +172,13 @@ curl -X POST http://127.0.0.1:8100/callback \
   -d '{ "reference": "...", "status": "SUCCESS", ... }'
 ```
 
-#### GET /check — Query Callback Data
+#### GET /callback/latest — Query Latest Callback
 
 ```bash
-curl http://127.0.0.1:8100/check?reference=d290f1ee-6c54-4b01-90e6-d701748f0851
+curl http://127.0.0.1:8100/callback/latest?orderId=550e8400-e29b-41d4-a716-446655440000
 ```
 
-Complete API documentation available in `blueprint/schema/order_server.yaml` and `blueprint/schema/callback_server.yaml` (OpenAPI 3.0 format).
+Complete API documentation available in `blueprint/schema/order_service.yaml` and `blueprint/schema/callback_service.yaml` (OpenAPI 3.0 format).
 
 ## 📊 Code Statistics
 
@@ -270,7 +270,7 @@ db.name=qwire_test
 ### FAQ
 
 **Q: How to modify card number rules?**  
-A: Edit `_check_card_rules()` function in `src/qwire_mock/order_service.py`. Rules also documented in `blueprint/spec/order-server.spec.yaml`.
+A: Edit `_check_card_rules()` function in `src/qwire_mock/order_service.py`. Rules also documented in `blueprint/spec/order-service.spec.yaml`.
 
 **Q: How to change status progression timing?**  
 A: Edit `PROCESSING_TO_SHIPPED_DELAY` and `SHIPPED_TO_DELIVERED_DELAY` constants in `src/qwire_mock/order_service.py`.

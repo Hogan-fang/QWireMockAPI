@@ -1,22 +1,32 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from uuid import UUID
+from decimal import Decimal
+from uuid import UUID, uuid4
 
 import pymysql
 from pymysql.cursors import DictCursor
 
 from qwire_mock.config import load_config
-from qwire_mock.schemas import OrderRequest, OrderResponse, ProductResponse
+from qwire_mock.schemas import (
+    OrderCreateRequest,
+    OrderCreateResponse,
+    OrderQueryResponse,
+    ProductQueryResponse,
+)
 
-ORDER_TABLE = "`order`"
-ORDER_PRODUCT_TABLE = "order_product"
+ORDERS_TABLE = "orders"
+ORDER_PRODUCTS_TABLE = "order_products"
 
 
 @dataclass
 class TransitionTarget:
-    reference: UUID
+    order_id: UUID
+    reference: str
+    merchant_id: str
+    payment_status: str
+    order_status: str
+    finish_time: datetime
     callback_url: str
-    target_status: str
 
 
 def _mysql_config() -> dict:
@@ -65,50 +75,40 @@ def init_db() -> None:
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                CREATE TABLE IF NOT EXISTS {ORDER_TABLE} (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    mid VARCHAR(10) NOT NULL,
-                    reference VARCHAR(36) NOT NULL UNIQUE,
-                    order_id VARCHAR(64) UNIQUE,
-                    name VARCHAR(255) NOT NULL,
-                    amount DOUBLE NOT NULL,
-                    currency VARCHAR(16) NOT NULL,
-                    status VARCHAR(32) NOT NULL,
-                    card_number VARCHAR(64) NOT NULL,
+                CREATE TABLE IF NOT EXISTS {ORDERS_TABLE} (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    order_id CHAR(36) NOT NULL UNIQUE,
+                    reference VARCHAR(64) NOT NULL,
+                    merchant_id VARCHAR(32) NOT NULL,
+                    amount DECIMAL(18,2) NOT NULL,
+                    currency VARCHAR(8) NOT NULL,
+                    payment_status VARCHAR(16) NOT NULL,
+                    order_status VARCHAR(16) NOT NULL,
+                    card_number_masked VARCHAR(32) NOT NULL,
                     fail_reason VARCHAR(255) DEFAULT NULL,
+                    callback_url VARCHAR(512) NOT NULL,
+                    create_time DATETIME(3) NOT NULL,
+                    finish_time DATETIME(3) DEFAULT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    callback_url VARCHAR(512) NOT NULL
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_orders_merchant_reference (merchant_id, reference),
+                    KEY idx_orders_reference (reference),
+                    KEY idx_orders_created_time (create_time)
                 )
                 """
             )
-            cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'mid'")
-            has_mid = cursor.fetchone() is not None
-            if not has_mid:
-                cursor.execute(f"ALTER TABLE {ORDER_TABLE} ADD COLUMN mid VARCHAR(10) NOT NULL DEFAULT 'UNKNOWN'")
-            cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'fail_reason'")
-            has_fail_reason_snake = cursor.fetchone() is not None
-            if not has_fail_reason_snake:
-                cursor.execute(f"SHOW COLUMNS FROM {ORDER_TABLE} LIKE 'failReason'")
-                has_fail_reason_camel = cursor.fetchone() is not None
-                if has_fail_reason_camel:
-                    cursor.execute(
-                        f"ALTER TABLE {ORDER_TABLE} CHANGE failReason fail_reason VARCHAR(255) DEFAULT NULL"
-                    )
-                else:
-                    cursor.execute(
-                        f"ALTER TABLE {ORDER_TABLE} ADD COLUMN fail_reason VARCHAR(255) DEFAULT NULL"
-                    )
             cursor.execute(
                 f"""
-                CREATE TABLE IF NOT EXISTS {ORDER_PRODUCT_TABLE} (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    order_id INT NOT NULL,
-                    product_id VARCHAR(64) NOT NULL,
-                    count INT NOT NULL,
-                    spec VARCHAR(128) NOT NULL,
-                    status VARCHAR(32) NOT NULL,
-                    FOREIGN KEY (order_id) REFERENCES {ORDER_TABLE}(id) ON DELETE CASCADE,
-                    INDEX idx_v2_order_id (order_id)
+                CREATE TABLE IF NOT EXISTS {ORDER_PRODUCTS_TABLE} (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    order_pk BIGINT NOT NULL,
+                    sku VARCHAR(64) NOT NULL,
+                    name VARCHAR(128) NOT NULL,
+                    quantity INT NOT NULL,
+                    unit_price DECIMAL(18,2) NOT NULL,
+                    amount DECIMAL(18,2) NOT NULL,
+                    CONSTRAINT fk_order_products_order FOREIGN KEY (order_pk) REFERENCES {ORDERS_TABLE}(id) ON DELETE CASCADE,
+                    KEY idx_order_products_order_pk (order_pk)
                 )
                 """
             )
@@ -117,133 +117,219 @@ def init_db() -> None:
         conn.close()
 
 
-def exists(reference: UUID) -> bool:
+def exists(merchant_id: str, reference: str) -> bool:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
-            cursor.execute(f"SELECT 1 FROM {ORDER_TABLE} WHERE reference = %s LIMIT 1", (str(reference),))
+            cursor.execute(
+                f"SELECT 1 FROM {ORDERS_TABLE} WHERE merchant_id = %s AND reference = %s LIMIT 1",
+                (merchant_id, reference),
+            )
             return cursor.fetchone() is not None
     finally:
         conn.close()
 
-def create_order(request: OrderRequest, status: str, failReason: str | None = None) -> OrderResponse:
+
+def create_order(
+    request: OrderCreateRequest,
+    callback_url: str,
+    payment_status: str,
+    order_status: str,
+    fail_reason: str | None = None,
+) -> OrderCreateResponse:
     conn = _conn()
-    now = datetime.now(timezone.utc)
+    order_id = uuid4()
+    create_time = datetime.now(timezone.utc)
+    finish_time = create_time
     masked_card = mask_card(request.cardNumber)
     try:
         with conn.cursor() as cursor:
             cursor.execute(
                 f"""
-                INSERT INTO {ORDER_TABLE} (
-                    reference, name, callback_url, mid, card_number, amount, currency, status, fail_reason
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO {ORDERS_TABLE} (
+                    order_id, reference, merchant_id, amount, currency, payment_status, order_status,
+                    card_number_masked, fail_reason, callback_url, create_time, finish_time
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    str(request.reference),
-                    request.name,
-                    request.callback,
-                    request.mid,
-                    masked_card,
-                    float(request.amount),
+                    str(order_id),
+                    request.reference,
+                    request.merchantId,
+                    Decimal(str(request.amount)),
                     request.currency,
-                    status,
-                    failReason,
+                    payment_status,
+                    order_status,
+                    masked_card,
+                    fail_reason,
+                    callback_url,
+                    create_time,
+                    finish_time,
                 ),
             )
-            row_id = cursor.lastrowid
-            order_id = f"PX{row_id}"
-            cursor.execute(f"UPDATE {ORDER_TABLE} SET order_id = %s WHERE id = %s", (order_id, row_id))
-
-            product_status = "FAIL" if status == "FAIL" else "PROCESSING"
-            for product in request.products:
+            order_pk = cursor.lastrowid
+            for item in request.products:
                 cursor.execute(
                     f"""
-                    INSERT INTO {ORDER_PRODUCT_TABLE} (order_id, product_id, count, spec, status)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO {ORDER_PRODUCTS_TABLE} (order_pk, sku, name, quantity, unit_price, amount)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (row_id, product.productId, product.count, product.spec, product_status),
+                    (
+                        order_pk,
+                        item.sku,
+                        item.sku,
+                        int(item.quantity),
+                        Decimal(str(item.unitPrice)),
+                        Decimal(str(item.amount)),
+                    ),
                 )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return OrderCreateResponse(
+        orderId=order_id,
+        reference=request.reference,
+        merchantId=request.merchantId,
+        amount=float(request.amount),
+        currency=request.currency,
+        paymentStatus=payment_status,
+        createTime=create_time,
+        finishTime=finish_time,
+        failReason=fail_reason,
+    )
+
+
+def _to_query_response(order_row: dict, product_rows: list[dict]) -> OrderQueryResponse:
+    return OrderQueryResponse(
+        orderId=UUID(order_row["order_id"]),
+        reference=order_row["reference"],
+        merchantId=order_row["merchant_id"],
+        amount=float(order_row["amount"]),
+        currency=order_row["currency"],
+        cardNumber=order_row["card_number_masked"],
+        paymentStatus=order_row["payment_status"],
+        orderStatus=order_row["order_status"],
+        products=[
+            ProductQueryResponse(
+                sku=row["sku"],
+                name=row["name"],
+                quantity=int(row["quantity"]),
+                unitPrice=float(row["unit_price"]),
+                amount=float(row["amount"]),
+            )
+            for row in product_rows
+        ],
+        failReason=order_row.get("fail_reason") if order_row["payment_status"] == "FAILED" else None,
+    )
+
+
+def get_order(merchant_id: str, reference: str | None = None, order_id: UUID | None = None) -> OrderQueryResponse | None:
+    if (reference is None and order_id is None) or (reference is not None and order_id is not None):
+        raise ValueError("Exactly one of reference or order_id is required")
+
+    conn = _conn()
+    try:
+        with conn.cursor() as cursor:
+            if reference is not None:
+                cursor.execute(
+                    f"SELECT * FROM {ORDERS_TABLE} WHERE merchant_id = %s AND reference = %s LIMIT 1",
+                    (merchant_id, reference),
+                )
+            else:
+                cursor.execute(
+                    f"SELECT * FROM {ORDERS_TABLE} WHERE merchant_id = %s AND order_id = %s LIMIT 1",
+                    (merchant_id, str(order_id)),
+                )
+            order_row = cursor.fetchone()
+            if order_row is None:
+                return None
+            cursor.execute(
+                f"SELECT sku, name, quantity, unit_price, amount FROM {ORDER_PRODUCTS_TABLE} WHERE order_pk = %s ORDER BY id",
+                (order_row["id"],),
+            )
+            product_rows = cursor.fetchall()
+            return _to_query_response(order_row, product_rows)
+    finally:
+        conn.close()
+
+
+def get_callback_target(order_id: UUID) -> tuple[str, str, str, str, str, datetime] | None:
+    conn = _conn()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT callback_url, reference, merchant_id, payment_status, order_status, finish_time
+                FROM {ORDERS_TABLE}
+                WHERE order_id = %s
+                """,
+                (str(order_id),),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return (
+                row["callback_url"],
+                row["reference"],
+                row["merchant_id"],
+                row["payment_status"],
+                row["order_status"],
+                row["finish_time"],
+            )
+    finally:
+        conn.close()
+
+
+def apply_scheduled_transitions(min_create_time: datetime | None = None) -> list[TransitionTarget]:
+    transitions: list[TransitionTarget] = []
+    conn = _conn()
+    try:
+        with conn.cursor() as cursor:
+            where_extra = ""
+            params: list = []
+            if min_create_time is not None:
+                where_extra = " AND create_time >= %s"
+                params.append(min_create_time)
+
+            cursor.execute(
+                f"""
+                SELECT order_id, reference, merchant_id, callback_url
+                FROM {ORDERS_TABLE}
+                WHERE payment_status = 'PAID' AND order_status = 'PROCESSING'
+                  AND create_time <= NOW() - INTERVAL 30 SECOND
+                  {where_extra}
+                """,
+                tuple(params),
+            )
+            rows = cursor.fetchall()
+            if rows:
+                ids = [(row["order_id"],) for row in rows]
+                cursor.executemany(
+                    f"""
+                    UPDATE {ORDERS_TABLE}
+                    SET order_status = 'DELIVERED', finish_time = NOW(3)
+                    WHERE order_id = %s
+                    """,
+                    ids,
+                )
+                for row in rows:
+                    transitions.append(
+                        TransitionTarget(
+                            order_id=UUID(row["order_id"]),
+                            reference=row["reference"],
+                            merchant_id=row["merchant_id"],
+                            payment_status="PAID",
+                            order_status="DELIVERED",
+                            finish_time=datetime.now(timezone.utc),
+                            callback_url=row["callback_url"],
+                        )
+                    )
 
         conn.commit()
     finally:
         conn.close()
 
-    return OrderResponse(
-        reference=request.reference,
-        orderId=order_id,
-        name=request.name,
-        mid=request.mid,
-        orderDate=now,
-        amount=float(request.amount),
-        currency=request.currency,
-        status=status,
-        cardNumber=masked_card,
-        products=[
-            ProductResponse(
-                productId=product.productId,
-                count=product.count,
-                spec=product.spec,
-                status="FAIL" if status == "FAIL" else "PROCESSING",
-            )
-            for product in request.products
-        ],
-        failReason=failReason if status == "FAIL" else None,
-    )
-
-
-def _map_row_to_order(order_row: dict, product_rows: list[dict]) -> OrderResponse:
-    return OrderResponse(
-        reference=UUID(order_row["reference"]),
-        orderId=order_row["order_id"],
-        name=order_row["name"],
-        mid=order_row["mid"],
-        orderDate=order_row["created_at"],
-        amount=float(order_row["amount"]),
-        currency=order_row["currency"],
-        status=order_row["status"],
-        cardNumber=order_row["card_number"],
-        products=[
-            ProductResponse(
-                productId=row["product_id"],
-                count=int(row["count"]),
-                spec=row["spec"],
-                status=row["status"],
-            )
-            for row in product_rows
-        ],
-        failReason=(order_row.get("failReason") or order_row.get("fail_reason")) if order_row["status"] == "FAIL" else None,
-    )
-
-
-def get_order(reference: UUID) -> OrderResponse | None:
-    conn = _conn()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(f"SELECT * FROM {ORDER_TABLE} WHERE reference = %s", (str(reference),))
-            order_row = cursor.fetchone()
-            if not order_row:
-                return None
-            cursor.execute(
-                f"SELECT product_id, count, spec, status FROM {ORDER_PRODUCT_TABLE} WHERE order_id = %s ORDER BY id",
-                (order_row["id"],),
-            )
-            product_rows = cursor.fetchall()
-            return _map_row_to_order(order_row, product_rows)
-    finally:
-        conn.close()
-
-
-def get_callback_info(reference: UUID) -> tuple[str, float] | None:
-    conn = _conn()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(f"SELECT callback_url, amount FROM {ORDER_TABLE} WHERE reference = %s", (str(reference),))
-            row = cursor.fetchone()
-            if row is None:
-                return None
-            return row["callback_url"], float(row["amount"])
-    finally:
-        conn.close()
+    return transitions
 
 
 def db_now() -> datetime:
@@ -257,113 +343,19 @@ def db_now() -> datetime:
         conn.close()
 
 
-def apply_scheduled_transitions(min_created_at: datetime | None = None) -> list[TransitionTarget]:
-    transitions: list[TransitionTarget] = []
-    conn = _conn()
-    try:
-        with conn.cursor() as cursor:
-            min_created_clause = ""
-            min_created_params: tuple = ()
-            if min_created_at is not None:
-                min_created_clause = " AND created_at >= %s"
-                min_created_params = (min_created_at,)
-
-            cursor.execute(
-                f"""
-                SELECT reference, callback_url
-                FROM {ORDER_TABLE}
-                WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 30 SECOND
-                {min_created_clause}
-                """,
-                min_created_params,
-            )
-            to_shipped = cursor.fetchall()
-            if to_shipped:
-                refs = [row["reference"] for row in to_shipped]
-                cursor.executemany(
-                    f"""
-                    UPDATE {ORDER_PRODUCT_TABLE} p
-                    JOIN {ORDER_TABLE} o ON p.order_id = o.id
-                    SET p.status = 'SHIPPED'
-                    WHERE o.reference = %s AND p.status = 'PROCESSING'
-                    """,
-                    [(ref,) for ref in refs],
-                )
-                transitions.extend(
-                    [
-                        TransitionTarget(reference=UUID(row["reference"]), callback_url=row["callback_url"], target_status="SHIPPED")
-                        for row in to_shipped
-                    ]
-                )
-
-            cursor.execute(
-                f"""
-                SELECT reference, callback_url
-                FROM {ORDER_TABLE}
-                WHERE status = 'SUCCESS' AND created_at <= NOW() - INTERVAL 60 SECOND
-                {min_created_clause}
-                """,
-                min_created_params,
-            )
-            to_delivered = cursor.fetchall()
-            if to_delivered:
-                refs = [row["reference"] for row in to_delivered]
-                cursor.executemany(
-                    f"""
-                    UPDATE {ORDER_PRODUCT_TABLE} p
-                    JOIN {ORDER_TABLE} o ON p.order_id = o.id
-                    SET p.status = 'DELIVERED'
-                    WHERE o.reference = %s AND p.status IN ('PROCESSING', 'SHIPPED')
-                    """,
-                    [(ref,) for ref in refs],
-                )
-                transitions.extend(
-                    [
-                        TransitionTarget(reference=UUID(row["reference"]), callback_url=row["callback_url"], target_status="DELIVERED")
-                        for row in to_delivered
-                    ]
-                )
-
-            cursor.execute(
-                f"""
-                SELECT o.reference, o.callback_url
-                FROM {ORDER_TABLE} o
-                WHERE o.status = 'SUCCESS'
-                {"AND o.created_at >= %s" if min_created_at is not None else ""}
-                  AND EXISTS (
-                    SELECT 1 FROM {ORDER_PRODUCT_TABLE} p WHERE p.order_id = o.id
-                  )
-                  AND NOT EXISTS (
-                    SELECT 1 FROM {ORDER_PRODUCT_TABLE} p WHERE p.order_id = o.id AND p.status != 'DELIVERED'
-                  )
-                """,
-                min_created_params,
-            )
-            to_completed = cursor.fetchall()
-            if to_completed:
-                refs = [row["reference"] for row in to_completed]
-                cursor.executemany(f"UPDATE {ORDER_TABLE} SET status = 'COMPLETED' WHERE reference = %s", [(ref,) for ref in refs])
-                transitions.extend(
-                    [
-                        TransitionTarget(reference=UUID(row["reference"]), callback_url=row["callback_url"], target_status="COMPLETED")
-                        for row in to_completed
-                    ]
-                )
-
-        conn.commit()
-    finally:
-        conn.close()
-    return transitions
-
-
-def clear_orders(reference: UUID | None = None) -> int:
+def clear_orders(reference: str | None = None, merchant_id: str | None = None) -> int:
     conn = _conn()
     try:
         with conn.cursor() as cursor:
             if reference is None:
-                cursor.execute(f"DELETE FROM {ORDER_TABLE}")
+                cursor.execute(f"DELETE FROM {ORDERS_TABLE}")
+            elif merchant_id is not None:
+                cursor.execute(
+                    f"DELETE FROM {ORDERS_TABLE} WHERE merchant_id = %s AND reference = %s",
+                    (merchant_id, reference),
+                )
             else:
-                cursor.execute(f"DELETE FROM {ORDER_TABLE} WHERE reference = %s", (str(reference),))
+                cursor.execute(f"DELETE FROM {ORDERS_TABLE} WHERE reference = %s", (reference,))
             affected = cursor.rowcount
         conn.commit()
         return affected

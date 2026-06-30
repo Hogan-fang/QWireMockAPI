@@ -76,15 +76,15 @@ QWireMockAPI/
 │   │   ├── requirement.md              # 业务需求（中文）
 │   │   └── requirement.en.md           # 业务需求（英文）
 │   ├── schema/
-│   │   ├── order_server.yaml           # Order API 契约（中文）
+│   │   ├── order_service.yaml          # Order API 契约（中文）
 │   │   ├── order_server.en.yaml        # Order API 契约（英文）
-│   │   ├── callback_server.yaml        # Callback API 契约（中文）
+│   │   ├── callback_service.yaml       # Callback API 契约（中文）
 │   │   └── callback_server.en.yaml     # Callback API 契约（英文）
 │   ├── spec/
-│   │   ├── order-server.spec.yaml      # Order 行为规范（中文）
-│   │   ├── order-server.spec.en.yaml   # Order 行为规范（英文）
-│   │   ├── callback-server.spec.yaml   # Callback 行为规范（中文）
-│   │   ├── callback-server.spec.en.yaml # Callback 行为规范（英文）
+│   │   ├── order-service.spec.yaml     # Order 行为规范（中文）
+│   │   ├── order-service.spec.en.yaml  # Order 行为规范（英文）
+│   │   ├── callback-service.spec.yaml  # Callback 行为规范（中文）
+│   │   ├── callback-service.spec.en.yaml # Callback 行为规范（英文）
 │   │   ├── shared-contracts.spec.yaml  # 共享契约（中文）
 │   │   └── shared-contracts.spec.en.yaml # 共享契约（英文）
 │   ├── implementation-plan.md           # 实现计划（中文）
@@ -172,13 +172,13 @@ curl -X POST http://127.0.0.1:8100/callback \
   -d '{ "reference": "...", "status": "SUCCESS", ... }'
 ```
 
-#### GET /check — 查询回调数据
+#### GET /callback/latest — 查询最近一次回调
 
 ```bash
-curl http://127.0.0.1:8100/check?reference=d290f1ee-6c54-4b01-90e6-d701748f0851
+curl http://127.0.0.1:8100/callback/latest?orderId=550e8400-e29b-41d4-a716-446655440000
 ```
 
-完整 API 文档见 `blueprint/schema/order_server.yaml` 和 `blueprint/schema/callback_server.yaml` (OpenAPI 3.0 格式)。
+完整 API 文档见 `blueprint/schema/order_service.yaml` 和 `blueprint/schema/callback_service.yaml` (OpenAPI 3.0 格式).
 
 ## 📊 代码统计
 
@@ -270,7 +270,7 @@ db.name=qwire_test
 ### 常见问题
 
 **Q: 如何修改卡号规则？**  
-A: 编辑 `src/qwire_mock/order_service.py` 中的 `_check_card_rules()` 函数，规则定义也见 `blueprint/spec/order-server.spec.yaml`。
+A: 编辑 `src/qwire_mock/order_service.py` 中的 `_check_card_rules()` 函数，规则定义也见 `blueprint/spec/order-service.spec.yaml`。
 
 **Q: 如何修改状态推进时间？**  
 A: 编辑 `src/qwire_mock/order_service.py` 中的 `PROCESSING_TO_SHIPPED_DELAY` 和 `SHIPPED_TO_DELIVERED_DELAY` 常量。

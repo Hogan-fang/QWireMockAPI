@@ -54,8 +54,8 @@ mock-platform/
         queue.py
 
   specs/
-    order-server.spec.yaml
-    callback-server.spec.yaml
+    order-service.spec.yaml
+    callback-service.spec.yaml
     shared-contracts.spec.yaml
 
   tests/

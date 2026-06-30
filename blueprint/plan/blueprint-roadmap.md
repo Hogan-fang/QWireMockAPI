@@ -6,8 +6,8 @@
 ## Phase 1：Schema Freeze
 
 - **输出文件**
-  - `../schema/order_server.yaml`
-  - `../schema/callback_server.yaml`
+  - `../schema/order_service.yaml`
+  - `../schema/callback_service.yaml`
 - **完成标准**
   - 路径、字段、响应码完成确认
   - `order` / `callback` 的输入输出模型一致
@@ -17,8 +17,8 @@
 ## Phase 2：Spec Finalize
 
 - **输出文件**
-  - `../spec/order-server.spec.yaml`
-  - `../spec/callback-server.spec.yaml`
+  - `../spec/order-service.spec.yaml`
+  - `../spec/callback-service.spec.yaml`
   - `../spec/shared-contracts.spec.yaml`
 - **完成标准**
   - 订单规则、callback 规则和共享约束全部落到 spec

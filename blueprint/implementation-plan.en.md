@@ -13,8 +13,8 @@
 	- `QWireGuideline/guideline/methodology.md`
 	- `QWireGuideline/guideline/AI-guideline.md`
 - Schema baseline:
-	- `blueprint/schema/order_server.yaml` / `order_server.en.yaml`
-	- `blueprint/schema/callback_server.yaml` / `callback_server.en.yaml`
+	- `blueprint/schema/order_service.yaml` / `order_server.en.yaml`
+	- `blueprint/schema/callback_service.yaml` / `callback_server.en.yaml`
 
 ## 3. Objectives and Scope
 
@@ -77,8 +77,8 @@
 
 ### Phase B: Behavior Specification (Spec)
 - Output:
-	- `blueprint/spec/order-server.spec.yaml`
-	- `blueprint/spec/callback-server.spec.yaml`
+	- `blueprint/spec/order-service.spec.yaml`
+	- `blueprint/spec/callback-service.spec.yaml`
 	- `blueprint/spec/shared-contracts.spec.yaml`
 - Completion: State machine, callback timing, error layering (business failure vs HTTP error) all verifiable.
 - Status: ✓ Completed
@@ -116,7 +116,7 @@ Conclusion: All gap items closed, schema contract fixed, ready for Phase B (Spec
 ### 7.2 Gap Items (All Closed)
 
 1. ~~Masking format constraint missing~~ ✓ Closed
-- Closure: In `order_server.yaml` `OrderResponse.cardNumber`, `OrderBusinessFailureResponse.cardNumber`, and `callback_server.yaml` `OrderResponse.cardNumber`, unified addition of `pattern: '^\d{6}\*{6}\d{4}$'`.
+- Closure: Add unified masked-card format constraints to the relevant card number fields in `order_service.yaml` and `callback_service.yaml`.
 
 2. ~~failReason constraint not strict enough~~ ✓ Closed
 - Closure: Both schema `OrderResponse` add `oneOf` conditional constraint—when `SUCCESS/COMPLETED`, `failReason` not allowed; when `FAIL`, `failReason` required and `minLength: 1`.

@@ -2,21 +2,21 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from uuid import UUID
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from qwire_mock.config import load_config
-from qwire_mock.schemas import OrderResponse, Received
+from qwire_mock.schemas import CallbackAckResponse, OrderCallbackQueryResponse, OrderCallbackRequest
 
 logger = logging.getLogger(__name__)
 CONFIG = load_config()
 LOGGING_CONFIG = CONFIG["logging"]
 
-# In-memory callback store: reference (str) -> latest OrderResponse
-_callback_store: dict[str, OrderResponse] = {}
+_callback_store: dict[str, OrderCallbackQueryResponse] = {}
 
 
 def _ensure_file_logger() -> None:
@@ -49,7 +49,7 @@ async def lifespan(_: FastAPI):
         logger.info("callback service shutdown")
 
 
-app = FastAPI(title="QWire Callback API v2", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="QWire Merchant Callback API v3", version="3.0.0", lifespan=lifespan)
 
 
 def _json(payload: dict) -> str:
@@ -57,52 +57,41 @@ def _json(payload: dict) -> str:
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    logger.warning("Invalid callback payload: path=%s errors=%s", request.url.path, exc.errors())
-    return JSONResponse(
-        status_code=400,
-        content={
-            "code": "invalid_request",
-            "detail": "Invalid order payload",
-        },
+async def validation_error_handler(_: Request, __: RequestValidationError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": "Invalid request"})
+
+
+@app.post("/callback")
+def callback(body: OrderCallbackRequest):
+    record = OrderCallbackQueryResponse(
+        callbackId=uuid4(),
+        callbackTime=datetime.now(timezone.utc),
+        orderId=body.orderId,
+        reference=body.reference,
+        merchantId=body.merchantId,
+        paymentStatus=body.paymentStatus,
+        orderStatus=body.orderStatus,
     )
+    _callback_store[str(body.orderId)] = record
+    logger.info("POST /callback request:\n%s", _json(body.model_dump(mode="json")))
+    logger.info("POST /callback stored:\n%s", _json(record.model_dump(mode="json")))
+    response = CallbackAckResponse(status="SUCCESS")
+    return JSONResponse(status_code=200, content=response.model_dump(mode="json"))
 
 
-@app.post("/callback", response_model=Received)
-def callback(body: OrderResponse) -> Received:
-    payload = body.model_dump(mode="json")
-    logger.info("POST /callback request:\n%s", _json(payload))
-
-    _callback_store[str(body.reference)] = body
-    logger.info("POST /callback stored reference=%s", body.reference)
-
-    response = Received(message="OK")
-    logger.info("POST /callback response:\n%s", _json(response.model_dump(mode="json")))
-    return response
-
-
-@app.get("/check")
-def check(reference: str = Query(..., description="Order reference (UUID)")):
+@app.get("/callback/latest")
+def latest_callback(orderId: str = Query(...)):
     try:
-        reference_uuid = UUID(reference)
+        order_uuid = UUID(orderId)
     except ValueError:
-        logger.warning("GET /check invalid UUID: reference=%s", reference)
-        return JSONResponse(
-            status_code=422,
-            content={"code": "invalid_reference", "detail": "Invalid UUID format"},
-        )
+        return JSONResponse(status_code=422, content={"detail": "Invalid request"})
 
-    key = str(reference_uuid)
+    key = str(order_uuid)
     record = _callback_store.get(key)
     if record is None:
-        logger.info("GET /check not found: reference=%s", reference_uuid)
-        return JSONResponse(
-            status_code=404,
-            content={"code": "callback_not_found", "detail": "Callback record not found"},
-        )
+        return JSONResponse(status_code=404, content={"detail": "Callback not found."})
 
     payload = record.model_dump(mode="json")
-    if record.failReason is None:
-        payload.pop("failReason", None)
-    logger.info("GET /check response:\n%s", _json(payload))
+    logger.info("GET /callback/latest response:\n%s", _json(payload))
+    _callback_store.pop(key, None)
     return JSONResponse(status_code=200, content=payload)
