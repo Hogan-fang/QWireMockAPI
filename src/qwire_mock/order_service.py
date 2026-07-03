@@ -54,9 +54,12 @@ def _json(payload: dict) -> str:
 
 def _sanitize_create_request(payload: dict) -> dict:
     sanitized = dict(payload)
-    sanitized.pop("cvv", None)
-    sanitized.pop("expiry", None)
-    sanitized.pop("cardholderName", None)
+    if "cvv" in sanitized:
+        sanitized["cvv"] = "***REDACTED***"
+    if "expiry" in sanitized:
+        sanitized["expiry"] = "***REDACTED***"
+    if "cardholderName" in sanitized:
+        sanitized["cardholderName"] = "***REDACTED***"
     if "cardNumber" in sanitized:
         sanitized["cardNumber"] = order_db.mask_card(str(sanitized["cardNumber"]))
     return sanitized
@@ -128,7 +131,10 @@ async def validation_error_handler(_: Request, __: RequestValidationError) -> JS
 
 @app.post("/order")
 def create_order(body: OrderCreateRequest, _: str | None = Header(default=None, alias="X-Mock-Signature")):
-    logger.info("POST /order request:\n%s", _json(_sanitize_create_request(body.model_dump(mode="json"))))
+    logger.info(
+        "POST /order request:\n%s",
+        _json(body.model_dump(mode="json", exclude_unset=True)),
+    )
 
     if body.currency not in ALLOWED_CURRENCIES:
         return JSONResponse(status_code=400, content={"detail": "Invalid currency"})
