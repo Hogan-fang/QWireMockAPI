@@ -89,7 +89,7 @@ QWireMockAPI/
 │   │   └── shared-contracts.spec.en.yaml # 共享契约（英文）
 │   ├── implementation-plan.md           # 实现计划（中文）
 │   ├── implementation-plan.en.md        # 实现计划（英文）
-│   ├── examples/                        # 接口请求/响应示例
+│   ├── example/                         # 接口请求/响应示例
 │   │   ├── order/                       # Order Server 示例
 │   │   └── callback/                    # Callback Server 示例
 │   └── README.md                        # 设计文档说明
@@ -487,7 +487,7 @@ QWireMock/
 │   ├── blueprint-guide.md
 │   ├── schema/
 │   ├── spec/
-│   ├── examples/
+│   ├── example/
 │   └── structure/
 └── README.md
 ```

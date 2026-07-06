@@ -89,7 +89,7 @@ QWireMockAPI/
 │   │   └── shared-contracts.spec.en.yaml # Shared contracts (English)
 │   ├── implementation-plan.md           # Implementation plan (Chinese)
 │   ├── implementation-plan.en.md        # Implementation plan (English)
-│   ├── examples/                        # API request/response examples
+│   ├── example/                         # API request/response examples
 │   │   ├── order/                       # Order Server examples
 │   │   └── callback/                    # Callback Server examples
 │   └── README.md                        # Design documentation guide

@@ -1,4 +1,4 @@
-# Blueprint Examples
+# Blueprint Example
 
 This directory contains JSON request and response samples derived from:
 
